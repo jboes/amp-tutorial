@@ -247,7 +247,7 @@ if ready:
 Next we use the convergence criteria to calculate Pd bulk fcc EOS at the desired level of accuracy. I have chosen (14, 14, 14) /k/-points, 400 eV encut, and 1e-4 eV ediff (default setting). We will need a good sized sample to fit the neural network. I have chosen a fine grid of 71 points about the expected minimum in energy, and 29 additional points to span the space leading to ``infinite'' separation. Figure ref:fig-eos shows the resulting fit. The code block also generates an ASE database, which we will use from this point on for easy access to the data. It is attached here: \attachfile{data.db}{(double-click to open)}.
 
 #+label: fig-eos
-#+caption: Electronic convergence criteria (ediff) convergence metrics for a single atom unit cell of fcc Pd.
+#+caption: Equation of state for fcc Pd as calculated from DFT.
 #+attr_org: :width 600
 [[./images/eos.png]]
 
@@ -257,6 +257,7 @@ import numpy as np
 from jasp import *
 import matplotlib.pyplot as plt
 from ase.utils.eos import EquationOfState
+from ase.units import kJ
 JASPRC['queue.walltime'] = '24:00:00'
 
 # Functions produced by Jacob Boes for work in computational catalysis
@@ -325,15 +326,25 @@ if ready:
     ax1.set_ylabel('Potential energy (eV)', color='b')
     ax1.tick_params(axis='y', colors='b')
 
+    ax1.text(vol.max() - 6, nrg.max(),
+             'V$_{0}$={1:1.1f}'.format('{min}', v0),
+             va='center', ha='left')
+    ax1.text(vol.max() - 6, nrg.max() - 0.3,
+             'E$_{0}$={1:1.3f}'.format('{min}', e0),
+             va='center', ha='left')
+    ax1.text(vol.max() - 6, nrg.max() - 0.6,
+             'B={0:1.0f}'.format(B  / kJ * 1.0e24),
+             va='center', ha='left')
+
     ax2 = ax1.twinx()
 
     ax2.scatter(vol, t, color='r')
     ax2.set_ylabel('Calculation time (min)', color='r')
     ax2.set_xlim(vol.min(), vol.max())
     ax2.tick_params(axis='y', colors='r')
-    ax2.set_ylim(0, 360)
+    ax2.set_ylim(0, 420)
 
-    ax1.set_xlabel('Volume ($\AA^{3}$)')
+    ax1.set_xlabel('Volume ($\AA^{3}$/atom)')
     plt.tight_layout()
     plt.savefig('./images/eos.png')
 #+END_SRC
@@ -388,23 +399,21 @@ from amp.descriptor import *
 from amp.regression import *
 import os
 
-n = 4
-i = 0
+for n in [2, 3]:
+    label = '{0}-{0}'.format(n)
+    wd = os.path.join(os.getcwd(), 'networks/' + label)
 
-label = 'l2n{0}i{1}'.format(n, i)
-wd = os.path.join(os.getcwd(), 'networks/' + label)
+    if not os.path.exists(wd):
+        os.makedirs(wd)
 
-if not os.path.exists(wd):
-    os.makedirs(wd)
+    calc = Amp(label="./networks/{0}/".format(label),
+               descriptor=Behler(cutoff=6.0),
+               regression=NeuralNetwork(hiddenlayers=(2, '{0}'.format(n))))
 
-calc = Amp(label="./networks/{0}/".format(label),
-           descriptor=Behler(cutoff=6.0),
-           regression=NeuralNetwork(hiddenlayers=(2, 2)))
-
-calc.train("./train.db", # The training data
-           cores=8,
-           global_search=None, # not found the simulated annealing feature useful
-           extend_variables=False) # feature does not work properly and will crash
+    calc.train("./train.db", # The training data
+               cores=8,
+               global_search=None, # not found the simulated annealing feature useful
+               extend_variables=False) # feature does not work properly and will crash
 #+END_SRC
 
 Once I figure out how to compile the necessary AMP files on Gilgamesh, we can submit these to the queue:
@@ -415,10 +424,8 @@ import subprocess
 
 home = os.getcwd()
 
-# we will try two iterations of 2, 3, and 4 nodes for 2 hidden layers.
-for n, i in [[2, 0], [2, 1],
-             [3, 0], [3, 1],
-             [4, 0], [4, 1]]:
+# We will try an iteration for 2, 3, and 4 nodes with 2 hidden layers.
+for n, i in [[2, 0], [3, 0], [4, 0]]:
 
     label = 'l2n{0}i{1}'.format(n, i)
     wd = os.path.join(home, 'networks/' + label)
@@ -465,11 +472,132 @@ cd $PBS_O_WORKDIR
     os.unlink('submit.sh')
 #+END_SRC
 
-#+RESULTS:
-: 1305130.gilgamesh.cheme.cmu.edu
-: 1305131.gilgamesh.cheme.cmu.edu
-: 1305132.gilgamesh.cheme.cmu.edu
-: 1305133.gilgamesh.cheme.cmu.edu
-: 1305134.gilgamesh.cheme.cmu.edu
-: 1305135.gilgamesh.cheme.cmu.edu
+Once the calculations finish we can check their convergence using the code below. These are trivial networks to train, so convergence should not be an issue. If there is a problem, restart the calculation to try again. This can be a difficult and time consuming part of the process for more complex system. 
 
+#+BEGIN_SRC python :results raw
+import os
+import json
+
+print('|Hidden layers|Iteration|Time|Cost Function|Energy RMSE|Force RMSE|')
+print('|-')
+
+for r, d, f in os.walk('networks'):
+    if 'train-log.txt' in f:
+        with open(os.path.join(r, 'train-log.txt'), 'r') as fi:
+            v = fi.readlines()[-3].split()
+
+    if 'trained-parameters.json' in f:
+        with open(os.path.join(r, 'trained-parameters.json'), 'r') as fi:
+            p = json.load(fi)
+        n = p['hiddenlayers']
+        print('|{0}|{1}|{2}|{3}|{4}|{5}|'.format(n, v[0], v[1], v[2], v[3], v[4]))
+#+END_SRC
+
+#+RESULTS:
+| Hidden layers   | Iteration | Time                | Cost Function | Energy RMSE | Force RMSE |
+|-----------------+-----------+---------------------+---------------+-------------+------------|
+| {u'Pd': [2, 2]} |       497 | 2015-11-18T15:59:22 |     8.921e-05 |   9.956e-04 |  0.000e+00 |
+| {u'Pd': [2, 3]} |       266 | 2015-11-18T15:59:34 |     8.967e-05 |   9.982e-04 |  0.000e+00 |
+
+The single atom unit cell enforces perfect symmetry. This results in cancellation of forces on the atom, meaning we will not be able to use our current neural networks for molecular dynamic simulation.
+
+** Validation of the network
+Now we need to validate our results to ensure that no over fitting has occurred. First, we will look at the residuals to the training and validation data. Then we will see if the neural networks perform well for their intended purpose.
+
+*** 
+
+
+*** Recreate the equation of state
+In this section, we recreate the equation of state using both of the neural networks and the same methodology as with DFT. The results are shown in Figures ref:fig-eos-NN2 and ref:fig-eos-NN3 for the 2-2 and 3-3 frameworks, respectively.
+
+#+label: fig-eos-NN2
+#+caption: Equation of state for fcc Pd as calculated from a neural network with 2-2 framework.
+#+attr_org: :width 600
+[[./images/eos-NN2.png]]
+
+#+label: fig-eos-NN3
+#+caption: Equation of state for fcc Pd as calculated from a neural network with 3-3 framework.
+#+attr_org: :width 600
+[[./images/eos-NN3.png]]
+
+Each neural network creats are an excellent fit to the DFT data, and we see that the calculation speed has improved by up to 6 orders of magnitude in the most extreme cases. For this application the choice of framework seems to have little effect on the equation of state produced.
+
+#+BEGIN_SRC python :results silent
+import numpy as np
+import matplotlib.pyplot as plt
+from ase.utils.eos import EquationOfState
+from ase.db import connect
+from amp import Amp
+from ase.visualize import view
+import os
+import json
+import time
+from ase.units import kJ
+
+db = connect('data.db')
+
+for r, d, f in os.walk('networks'):
+    if 'trained-parameters.json' in f:
+        calc = Amp(load=r + '/')
+
+        with open(os.path.join(r, 'trained-parameters.json'), 'r') as fi:
+            p = json.load(fi)
+        n = p['hiddenlayers'].values()[0]
+
+        nrg, vol, t = [], [], []
+        for d in db.select():
+            atoms = db.get_atoms(d.id)
+            atoms.set_calculator(calc)
+
+            time1 = time.time()
+            energy = atoms.get_potential_energy()
+            time2 = time.time()
+
+            nrg += [energy]
+            vol += [d.volume]
+            t += [(time2 - time1) * 1000]
+
+        min_nrg = vol[nrg.index(min(nrg))]
+        ind = (np.array(vol) > min_nrg - 15) & (np.array(vol) < min_nrg + 15)
+        vol = np.array(vol)[ind]
+        nrg = np.array(nrg)[ind]
+        t = np.array(t)[ind]
+
+        # Fit the data to SJEOS
+        eos = EquationOfState(vol, nrg)
+        v0, e0, B, fit = eos.fit()
+
+        x = np.linspace(vol.min(), vol.max(), 250)
+
+        fig = plt.figure(figsize=(6, 4))
+        ax1 = fig.add_subplot(111)
+        ax1.scatter(vol, nrg, color='b')
+        ax1.plot(x, fit(x**-(1.0 / 3)), 'k-')
+
+        ax1.set_xlim(vol.min(), vol.max())
+        ax1.set_ylabel('Potential energy (eV)', color='b')
+        ax1.tick_params(axis='y', colors='b')
+
+        ax1.text(vol.max() - 6, nrg.max(),
+                 'V$_{0}$={1:1.1f}'.format('{min}', v0),
+                 va='center', ha='left')
+        ax1.text(vol.max() - 6, nrg.max() - 0.3,
+                 'E$_{0}$={1:1.3f}'.format('{min}', e0),
+                 va='center', ha='left')
+        ax1.text(vol.max() - 6, nrg.max() - 0.6,
+                 'B={0:1.0f}'.format(B  / kJ * 1.0e24),
+                 va='center', ha='left')
+
+        ax2 = ax1.twinx()
+
+        ax2.scatter(vol, t, color='r')
+        ax2.set_ylabel('Calculation time (milliseconds)', color='r')
+        ax2.set_xlim(vol.min(), vol.max())
+        ax2.tick_params(axis='y', colors='r')
+        ax2.set_ylim(0, 40)
+
+        ax1.set_xlabel('Volume ($\AA^{3}$/atom)')
+        plt.title("Equation of state: NN {0}".format(n))
+        plt.tight_layout()
+        plt.savefig('./images/eos-NN{0}.png'.format(n[-1]))
+#+END_SRC
