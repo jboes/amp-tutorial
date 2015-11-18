@@ -1,0 +1,484 @@
+* Convergence calculations
+First, we need to determine an appropriate level of convergence for our calculations. I usually use the natural bulk configuration of a metal for these studies. For Pd, this is fcc.
+
+** k-point convergence
+First, we determine an appropriate /k/-point convergence. We will be performing many calculations, so a high level of accuracy is desirable, but not if the computational cost is too high. I use a high energy cutoff (400 eV) to make sure there are no effects from encut convergence to potentially skew the results.
+
+#+label: fig-kpts
+#+caption: /k/-point convergence metrics for a single atom unit cell of fcc Pd
+#+attr_org: :width 600
+[[./images/conv-kpt.png]]
+
+Figure ref:fig-kpts shows that a Monkhorst-pack grid of roughly (14, 14, 14) /k/-points is sufficient to each 1 meV convergence.
+
+#+BEGIN_SRC python :results silent
+from ase.lattice.cubic import FaceCenteredCubic
+import numpy as np
+from jasp import *
+import matplotlib.pyplot as plt
+from ase.visualize import view
+JASPRC['queue.walltime'] = '24:00:00'
+
+# Define the atoms object of interest
+atoms = FaceCenteredCubic('Pd',
+                          directions=[[0, 1, 1],
+                                      [1, 0, 1],
+                                      [1, 1, 0]],
+                          latticeconstant=3.939)
+
+# Always a good idea to visualize your unit cell before starting
+#view(atoms)
+
+# We will sample a large range of k-points
+kpts = np.linspace(6, 30, 13)
+
+nrg, t, ibz = [], [], []
+ready = True
+for k in kpts:
+
+    with jasp('DFT/structure=fcc/convergence=kpoints/kpoints={0}'.format(int(k)),
+              xc='PBE',
+              kpts=(int(k), int(k), int(k)),
+              encut=400, # Choose a relatively large value
+              ibrion=-1, # Perform a single-point calcuation
+              atoms=atoms) as calc:
+        try:
+            atoms = calc.get_atoms()
+            nrg += [atoms.get_potential_energy()]
+            t += [calc.get_elapsed_time() / 60.0]
+            ibz += [len(calc.read_ibz_kpoints())]
+        except(VaspQueued, VaspSubmitted):
+            ready = False
+
+if ready:
+    # Take all energies in reference to the last
+    nrg = np.array(nrg) - nrg[-1]
+
+    fig = plt.figure(figsize=(6, 4))
+    ax1 = fig.add_subplot(111)
+    ax1.plot(kpts, nrg, 'bo-')
+
+    tol = 0.001
+    ax1.plot([kpts.min(), kpts.max()], [tol, tol], 'k--')
+    ax1.plot([kpts.min(), kpts.max()], [-tol, -tol], 'k--')
+
+    ax1.set_xlim(kpts.min(), kpts.max())
+    ax1.set_ylabel('Relative potential energy (eV)', color='b')
+    ax1.tick_params(axis='y', colors='b')
+
+    ax2 = ax1.twinx()
+
+    ax2.plot(kpts, t, 'ro-')
+    ax2.set_ylabel('Calculation time (min)', color='r')
+    ax2.set_xlim(kpts.min(), kpts.max())
+    ax2.tick_params(axis='y', colors='r')
+    ax2.set_ylim(0, 160)
+
+    ax3 = ax1.twiny()
+    
+    ax3.set_xticks([0./ 24, 4./24, 8./24, 12./24, 16./24, 20./24, 24./24])
+    ax3.set_xticklabels([ibz[0], ibz[2], ibz[4], ibz[6], ibz[8], ibz[10], ibz[12],])
+    ax3.set_xlabel('IBZ $k$-points (total)')
+
+    ax1.set_xlabel('Monkhorst-pack grid $k$-point density (k, k, k)')
+    plt.tight_layout()
+    plt.savefig('images/conv-kpt.png')
+#+END_SRC
+
+** encut convergence
+Next, we look at energy cutoff convergence. Similarly, /k/-point density is fixed at (16, 16, 16) for these calculations to ensure no effects from lack of convergence.
+
+#+label: fig-encut
+#+caption: Energy cutoff convergence metrics for a single atom unit cell of fcc Pd.
+#+attr_org: :width 600
+[[./images/conv-encut.png]]
+
+In this case, Figure ref:fig-encut shows 350 eV energy cutoff is sufficient to achieve 1 meV convergence. Interestingly, the timing information suggests that 450 eV may be a better choice, or higher, but this is difficult to determine with a single run.
+
+#+BEGIN_SRC python :results silent
+from ase.lattice.cubic import FaceCenteredCubic
+import numpy as np
+from jasp import *
+import matplotlib.pyplot as plt
+from ase.visualize import view
+JASPRC['queue.walltime'] = '24:00:00'
+
+# Define the atoms object of interest
+atoms = FaceCenteredCubic('Pd',
+                          directions=[[0, 1, 1],
+                                      [1, 0, 1],
+                                      [1, 1, 0]],
+                          latticeconstant=3.939)
+
+# Always a good idea to visualize your unit cell before starting
+#view(atoms)
+
+# We will sample a large range of encut
+encut = np.linspace(300, 800, (800-300)/23)
+
+nrg, t = [], []
+ready = True
+for k in encut:
+
+    with jasp('DFT/structure=fcc/convergence=encut/encut={0}'.format(int(k)),
+              xc='PBE',
+              kpts=(16, 16, 16), # Choose a relatively large value
+              encut=k,
+              ibrion=-1, # Perform a single-point calcuation
+              atoms=atoms) as calc:
+        try:
+            atoms = calc.get_atoms()
+            nrg += [atoms.get_potential_energy()]
+            t += [calc.get_elapsed_time() / 60.0]
+        except(VaspQueued, VaspSubmitted):
+            ready = False
+
+if ready:
+    # Take all energies in reference to the last
+    nrg = np.array(nrg) - nrg[-1]
+
+    fig = plt.figure(figsize=(6, 4))
+    ax1 = fig.add_subplot(111)
+    ax1.plot(encut, nrg, 'bo-')
+
+    tol = 0.001
+    ax1.plot([encut.min(), encut.max()], [tol, tol], 'k--')
+    ax1.plot([encut.min(), encut.max()], [-tol, -tol], 'k--')
+
+    ax1.set_xlim(encut.min(), encut.max())
+    ax1.set_ylabel('Relative potential energy (eV)', color='b')
+    ax1.tick_params(axis='y', colors='b')
+
+    ax2 = ax1.twinx()
+
+    ax2.plot(encut, t, 'ro-')
+    ax2.set_ylabel('Calculation time (min)', color='r')
+    ax2.set_xlim(encut.min(), encut.max())
+    ax2.tick_params(axis='y', colors='r')
+    ax2.set_ylim(0, 160)
+
+    ax1.set_xlabel('Energy cutoff (eV)')
+    plt.tight_layout()
+    plt.savefig('./images/conv-encut.png')
+#+END_SRC
+
+** ediff convergence
+Finally, we look at the effects of electronic convergence criteria on total energy convergence. For this study, /k/-points are fixed at (16, 16, 16) and encut at 400 eV.
+
+#+label: fig-ediff
+#+caption: Electronic convergence criteria (ediff) convergence metrics for a single atom unit cell of fcc Pd.
+#+attr_org: :width 600
+[[./images/conv-ediff.png]]
+
+Interestingly, Figure ref:fig-ediff shows that values less than 5e-3 eV (or 5 meV) have no effect on the convergence of the total energy. The calculation times suggest that the default of 1e-4 eV is a good choice.
+
+#+BEGIN_SRC python :results silent
+from ase.lattice.cubic import FaceCenteredCubic
+import numpy as np
+from jasp import *
+import matplotlib.pyplot as plt
+from ase.visualize import view
+JASPRC['queue.walltime'] = '24:00:00'
+
+# Define the atoms object of interest
+atoms = FaceCenteredCubic('Pd',
+                          directions=[[0, 1, 1],
+                                      [1, 0, 1],
+                                      [1, 1, 0]],
+                          latticeconstant=3.939)
+
+# Always a good idea to visualize your unit cell before starting
+#view(atoms)
+
+# We will sample a small range of ediff
+ediff = np.array([1e-2, 5e-3, 1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6, 1e-6])
+
+nrg, t = [], []
+ready = True
+for k in ediff:
+
+    with jasp('DFT/structure=fcc/convergence=ediff/ediff={0:1.6f}'.format(k),
+              xc='PBE',
+              kpts=(16, 16, 16), # Choose a relatively large value
+              encut=400,
+              ediff=k,
+              ibrion=-1, # Perform a single-point calcuation
+              atoms=atoms) as calc:
+        try:
+            atoms = calc.get_atoms()
+            nrg += [atoms.get_potential_energy()]
+            t += [calc.get_elapsed_time() / 60.0]
+        except(VaspQueued, VaspSubmitted):
+            ready = False
+
+if ready:
+    # Take all energies in reference to the last
+    nrg = np.array(nrg) - nrg[-1]
+
+    fig = plt.figure(figsize=(6, 4))
+    ax1 = fig.add_subplot(111)
+    ax1.semilogx(ediff, nrg, 'bo-')
+
+    tol = 0.001
+    ax1.plot([ediff.min(), ediff.max()], [tol, tol], 'k--')
+    ax1.plot([ediff.min(), ediff.max()], [-tol, -tol], 'k--')
+
+    ax1.set_xlim(ediff.min(), ediff.max())
+    ax1.set_ylabel('Relative potential energy (eV)', color='b')
+    ax1.tick_params(axis='y', colors='b')
+    ax1.invert_xaxis()
+
+    ax2 = ax1.twinx()
+
+    ax2.semilogx(ediff, t, 'ro-')
+    ax2.set_ylabel('Calculation time (min)', color='r')
+    ax2.set_xlim(ediff.min(), ediff.max())
+    ax2.tick_params(axis='y', colors='r')
+    ax2.invert_xaxis()
+    ax2.set_ylim(0, 160)
+
+    ax1.set_xlabel('Electronic convergence criteria (eV)')
+    plt.tight_layout()
+    plt.savefig('./images/conv-ediff.png')
+#+END_SRC
+
+* COMMENT Equation of state
+Next we use the convergence criteria to calculate Pd bulk fcc EOS at the desired level of accuracy. I have chosen (14, 14, 14) /k/-points, 400 eV encut, and 1e-4 eV ediff (default setting). We will need a good sized sample to fit the neural network. I have chosen a fine grid of 71 points about the expected minimum in energy, and 29 additional points to span the space leading to ``infinite'' separation. Figure ref:fig-eos shows the resulting fit. The code block also generates an ASE database, which we will use from this point on for easy access to the data. It is attached here: \attachfile{data.db}{(double-click to open)}.
+
+#+label: fig-eos
+#+caption: Electronic convergence criteria (ediff) convergence metrics for a single atom unit cell of fcc Pd.
+#+attr_org: :width 600
+[[./images/eos.png]]
+
+#+BEGIN_SRC python :results silent
+from ase.lattice.cubic import FaceCenteredCubic
+import numpy as np
+from jasp import *
+import matplotlib.pyplot as plt
+import os
+from ase.utils.eos import EquationOfState
+JASPRC['queue.walltime'] = '24:00:00'
+
+# Functions produced by Jacob Boes for work in computational catalysis
+# These are freely available at: https://github.com/jboes/jbtools.git
+import jbtools.gilgamesh as jb
+
+if os.path.exists('data.db'):
+    os.unlink('data.db')
+
+# Fraction of equilibrium lattice constant to be calculated
+factor = np.append(np.linspace(0.85, 1.2, 71),
+                   np.linspace(1.23, 2.07, 29))
+
+nrg, vol, t = [], [], []
+ready = True
+for x in factor:
+
+    atoms = FaceCenteredCubic('Pd',
+                              directions=[[0, 1, 1],
+                                          [1, 0, 1],
+                                          [1, 1, 0]],
+                              latticeconstant=3.939)
+
+    delta = np.array([[x, 0., 0.],
+                      [0., x, 0.],
+                      [0., 0., x]])
+    atoms.set_cell(np.dot(atoms.get_cell(), delta),
+                   scale_atoms=True)
+
+    with jasp('DFT/structure=fcc/convergence=None/factor={0:1.3f}'.format(x),
+              xc='PBE',
+              kpts=(14, 14, 14), # Choose an appropriate value
+              encut=400,
+              ibrion=-1,
+              atoms=atoms) as calc:
+        try:
+            atoms = calc.get_atoms()
+            nrg += [atoms.get_potential_energy()]
+            vol += [atoms.get_volume()]
+            t += [calc.get_elapsed_time() / 60.0]
+
+            # Here we collect the data to an ASE database
+            # for easy future manipulation
+            jb.makedb(calc, dbname='~/research/amp/data.db')
+        except(VaspQueued, VaspSubmitted):
+            ready = False
+
+if ready:
+
+    # We will use only the energies \pm 15 $\AA^{3}$ about 
+    # the minimum energy for the figure.
+    min_nrg = vol[nrg.index(min(nrg))]
+    ind = (np.array(vol) > min_nrg - 15) & (np.array(vol) < min_nrg + 15)
+    vol = np.array(vol)[ind]
+    nrg = np.array(nrg)[ind]
+    t = np.array(t)[ind]
+
+    # Fit the data to SJEOS
+    eos = EquationOfState(vol, nrg)
+    v0, e0, B, fit = eos.fit()
+
+    x = np.linspace(vol.min(), vol.max(), 250)
+
+    fig = plt.figure(figsize=(6, 4))
+    ax1 = fig.add_subplot(111)
+    ax1.scatter(vol, nrg, color='b')
+    ax1.plot(x, fit(x**-(1.0 / 3)), 'k-')
+
+    ax1.set_xlim(vol.min(), vol.max())
+    ax1.set_ylabel('Potential energy (eV)', color='b')
+    ax1.tick_params(axis='y', colors='b')
+
+    ax2 = ax1.twinx()
+
+    ax2.plot(vol, t, 'ro-')
+    ax2.set_ylabel('Calculation time (min)', color='r')
+    ax2.set_xlim(vol.min(), vol.max())
+    ax2.tick_params(axis='y', colors='r')
+    ax2.set_ylim(0, 360)
+
+    ax1.set_xlabel('Volume ($\AA^{3}$)')
+    plt.tight_layout()
+    plt.savefig('./images/eos.png')
+#+END_SRC
+
+* Creating a neural network
+To train a neural network we will be using AMP (https://bitbucket.org/andrewpeterson/amp), a software package developed by the Peterson group at Brown University.
+
+Before we begin creating out neural network, we need to separate about 10% of out data into a validation set. This will be useful later, when determining whether over fitting has occurred. There is functionality for this in AMP, but it does not provide with as much control as the following code.
+
+#+BEGIN_SRC python
+from ase.db import connect
+import os
+import random
+import numpy as np
+
+db = connect('data.db')
+
+n = db.count()
+n_train = int(round(n * 0.9))
+
+n_ids =  np.array(range(n)) + 1
+
+# This will sudo-randomly select 10% of the calculations
+# Which is useful for reproducing our results.
+random.seed(256)
+train_samples = random.sample(n_ids, n_train)
+valid_samples = set(n_ids) - set(train_samples)
+
+db.update(list(train_samples), train_set=True)
+db.update(list(valid_samples), train_set=False)
+
+db0 = connect('train.db')
+
+for d in db.select(['train_set=True']):
+    db0.write(d, key_value_pairs=d.key_value_pairs)
+#+END_SRC
+
+#+RESULTS:
+
+Now we have sudo-randomly labeled 10% of our calculations for validation, and the rest are waiting to be trained in the new train.db file. This file is also attached: \attachfile{train.db}{(double-click to open)}.
+
+** training neural networks
+For all of out neural networks, we will be using the Behler-Parenello (BP) framework for distinguishing between geometries of atoms. Little to no work is published on how to systematically chose an appropriate number of variables for your BP framework, so we simply use the default settings in AMP for now. However, it is worth mentioning that a single G1 type variable (simplest possible descriptor) could be used to describe the fcc EOS, if that is all we are interested in.
+
+We also need to define a cutoff radius for our system which will determine the maximum distance that the BP framework considers atoms to be interacting. 6 $\AA$ is a typical value used in the literature for metals with no appreciable long range interactions, which we will be using here.
+
+Finally, it is also often desirable to have multiple neural networks which are trained to the same level of accuracy, but with different frameworks. These frameworks are determined by the number of nodes and hidden layers used. In general, we want the smallest number of nodes and layers possible to avoid the possibility of over fitting. However, too small a framework will be too rigid to properly fit complex potential energy surfaces.
+
+At the moment, I run these locally:
+
+#+BEGIN_SRC python
+from amp import Amp
+from amp.descriptor import *
+from amp.regression import *
+import os
+
+n = 2
+i = 0
+
+label = 'l2n{0}i{1}'.format(n, i)
+wd = os.path.join(os.getcwd(), 'networks/' + label)
+
+if not os.path.exists(wd):
+    os.makedirs(wd)
+else:
+    pass
+os.chdir(wd)
+
+calc = Amp(label="./networks/{0}/".format(label),
+           descriptor=Behler(cutoff=6.0),
+           regression=NeuralNetwork(hiddenlayers=(2, 2)))
+
+calc.train("./train.db", # The training data
+           cores=4,
+           global_search=None, # not found the simulated annealing feature useful
+           extend_variables=False) # feature does not work properly and will crash
+#+END_SRC
+
+Once I figure out how to compile the necessary AMP files on Gilgamesh, we can submit these to the queue:
+
+#+BEGIN_SRC python
+import os
+import subprocess
+
+home = os.getcwd()
+
+# we will try two iterations of 2, 3, and 4 nodes for 2 hidden layers.
+for n, i in [[2, 0], [2, 1],
+             [3, 0], [3, 1],
+             [4, 0], [4, 1]]:
+
+    label = 'l2n{0}i{1}'.format(n, i)
+    wd = os.path.join(home, 'networks/' + label)
+
+    if not os.path.exists(wd):
+        os.makedirs(wd)
+    else:
+        pass
+    os.chdir(wd)
+
+    run_amp = """#!/usr/bin/env python
+from amp import Amp
+from amp.descriptor import *
+from amp.regression import *
+
+calc = Amp(label="./networks/{0}/",
+           descriptor=Behler(cutoff=6.0),
+           regression=NeuralNetwork(hiddenlayers=(2, {1})))
+
+calc.train("./train.db", # The training data
+           cores=4,
+           global_search=None, # not found the simulated annealing feature useful
+           extend_variables=False) # feature does not work properly and will crash
+""".format(label, n)
+
+    cmd = """#!/bin/bash
+#PBS -N {0}
+#PBS -l nodes=1:ppn=4
+#PBS -l walltime=24:00:00
+#PBS -l mem=3GB
+#PBS -joe
+cd $PBS_O_WORKDIR
+./submit.py
+#end""".format(wd)
+
+    with open('submit.py', 'w') as f:
+        f.write(run_amp)
+    os.chmod('submit.py', 0777)
+
+    with open('submit.sh', 'w') as f:
+        f.write(cmd)
+
+    subprocess.call(['qsub', 'submit.sh'])
+    os.unlink('submit.sh')
+#+END_SRC
+
+#+RESULTS:
+: 1305130.gilgamesh.cheme.cmu.edu
+: 1305131.gilgamesh.cheme.cmu.edu
+: 1305132.gilgamesh.cheme.cmu.edu
+: 1305133.gilgamesh.cheme.cmu.edu
+: 1305134.gilgamesh.cheme.cmu.edu
+: 1305135.gilgamesh.cheme.cmu.edu
+
