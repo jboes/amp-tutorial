@@ -342,14 +342,14 @@ if ready:
     ax2.set_ylabel('Calculation time (min)', color='r')
     ax2.set_xlim(vol.min(), vol.max())
     ax2.tick_params(axis='y', colors='r')
-    ax2.set_ylim(0, 420)
+    ax2.set_ylim(0, 480)
 
     ax1.set_xlabel('Volume ($\AA^{3}$/atom)')
     plt.tight_layout()
     plt.savefig('./images/eos.png')
 #+END_SRC
 
-* Creating a neural network
+* Neural network
 To train a neural network we will be using AMP (https://bitbucket.org/andrewpeterson/amp), a software package developed by the Peterson group at Brown University.
 
 Before we begin creating out neural network, we need to separate about 10% of out data into a validation set. This will be useful later, when determining whether over fitting has occurred. There is functionality for this in AMP, but it does not provide with as much control as the following code.
@@ -504,7 +504,7 @@ The single atom unit cell enforces perfect symmetry. This results in cancellatio
 ** Validation of the network
 Now we need to validate our results to ensure that no over fitting has occurred. First, we will look at the residuals to the training and validation data. Then we will see if the neural networks perform well for their intended purpose.
 
-*** 
+***  
 
 
 *** Recreate the equation of state
