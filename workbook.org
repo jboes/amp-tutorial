@@ -242,7 +242,7 @@ if ready:
     plt.savefig('./images/conv-ediff.png')
 #+END_SRC
 
-* COMMENT Equation of state
+* Equation of state
 Next we use the convergence criteria to calculate Pd bulk fcc EOS at the desired level of accuracy. I have chosen (14, 14, 14) /k/-points, 400 eV encut, and 1e-4 eV ediff (default setting). We will need a good sized sample to fit the neural network. I have chosen a fine grid of 71 points about the expected minimum in energy, and 29 additional points to span the space leading to ``infinite'' separation. Figure ref:fig-eos shows the resulting fit. The code block also generates an ASE database, which we will use from this point on for easy access to the data. It is attached here: \attachfile{data.db}{(double-click to open)}.
 
 #+label: fig-eos
@@ -347,7 +347,7 @@ To train a neural network we will be using AMP (https://bitbucket.org/andrewpete
 
 Before we begin creating out neural network, we need to separate about 10% of out data into a validation set. This will be useful later, when determining whether over fitting has occurred. There is functionality for this in AMP, but it does not provide with as much control as the following code.
 
-#+BEGIN_SRC python
+#+BEGIN_SRC python :results silent
 from ase.db import connect
 import os
 import random
@@ -375,8 +375,6 @@ for d in db.select(['train_set=True']):
     db0.write(d, key_value_pairs=d.key_value_pairs)
 #+END_SRC
 
-#+RESULTS:
-
 Now we have sudo-randomly labeled 10% of our calculations for validation, and the rest are waiting to be trained in the new train.db file. This file is also attached: \attachfile{train.db}{(double-click to open)}.
 
 ** training neural networks
@@ -388,7 +386,7 @@ Finally, it is also often desirable to have multiple neural networks which are t
 
 At the moment, I run these locally:
 
-#+BEGIN_SRC python
+#+BEGIN_SRC python :results silent
 from amp import Amp
 from amp.descriptor import *
 from amp.regression import *

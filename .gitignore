@@ -1,2 +1,5 @@
 *.pyc
 DFT*
+auto/
+workbook.tex
+networks/
