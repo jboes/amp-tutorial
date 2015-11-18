@@ -255,16 +255,12 @@ from ase.lattice.cubic import FaceCenteredCubic
 import numpy as np
 from jasp import *
 import matplotlib.pyplot as plt
-import os
 from ase.utils.eos import EquationOfState
 JASPRC['queue.walltime'] = '24:00:00'
 
 # Functions produced by Jacob Boes for work in computational catalysis
 # These are freely available at: https://github.com/jboes/jbtools.git
 import jbtools.gilgamesh as jb
-
-if os.path.exists('data.db'):
-    os.unlink('data.db')
 
 # Fraction of equilibrium lattice constant to be calculated
 factor = np.append(np.linspace(0.85, 1.2, 71),
@@ -297,14 +293,13 @@ for x in factor:
             nrg += [atoms.get_potential_energy()]
             vol += [atoms.get_volume()]
             t += [calc.get_elapsed_time() / 60.0]
-
-            # Here we collect the data to an ASE database
-            # for easy future manipulation
-            jb.makedb(calc, dbname='~/research/amp/data.db')
         except(VaspQueued, VaspSubmitted):
             ready = False
 
 if ready:
+    # Here we collect the data to an ASE database
+    # for easy future manipulation
+    jb.write_database('DFT/structure=fcc/convergence=None/')
 
     # We will use only the energies \pm 15 $\AA^{3}$ about 
     # the minimum energy for the figure.
@@ -331,7 +326,7 @@ if ready:
 
     ax2 = ax1.twinx()
 
-    ax2.plot(vol, t, 'ro-')
+    ax2.scatter(vol, t, color='r')
     ax2.set_ylabel('Calculation time (min)', color='r')
     ax2.set_xlim(vol.min(), vol.max())
     ax2.tick_params(axis='y', colors='r')
@@ -442,7 +437,7 @@ calc = Amp(label="./networks/{0}/",
            descriptor=Behler(cutoff=6.0),
            regression=NeuralNetwork(hiddenlayers=(2, {1})))
 
-calc.train("./train.db", # The training data
+calc.train("../../train.db", # The training data
            cores=4,
            global_search=None, # not found the simulated annealing feature useful
            extend_variables=False) # feature does not work properly and will crash
