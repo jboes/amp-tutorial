@@ -2,4 +2,6 @@
 DFT*
 auto/
 workbook.tex
-networks/
+fingerprint-derivatives.*
+fingerprints.*
+neighborlists.*

@@ -151,7 +151,8 @@ if ready:
 
     ax2 = ax1.twinx()
 
-    ax2.plot(encut, t, 'ro-')
+    #ax2.plot(encut, t, 'ro-')
+    ax2.barv(encut, t, facecolor='r', alpha=0.25)
     ax2.set_ylabel('Calculation time (min)', color='r')
     ax2.set_xlim(encut.min(), encut.max())
     ax2.tick_params(axis='y', colors='r')
@@ -387,7 +388,7 @@ from amp.descriptor import *
 from amp.regression import *
 import os
 
-n = 2
+n = 4
 i = 0
 
 label = 'l2n{0}i{1}'.format(n, i)
@@ -401,7 +402,7 @@ calc = Amp(label="./networks/{0}/".format(label),
            regression=NeuralNetwork(hiddenlayers=(2, 2)))
 
 calc.train("./train.db", # The training data
-           cores=2,
+           cores=8,
            global_search=None, # not found the simulated annealing feature useful
            extend_variables=False) # feature does not work properly and will crash
 #+END_SRC
