@@ -391,7 +391,7 @@ We also need to define a cutoff radius for our system which will determine the m
 
 Finally, it is also often desirable to have multiple neural networks which are trained to the same level of accuracy, but with different frameworks. These frameworks are determined by the number of nodes and hidden layers used. In general, we want the smallest number of nodes and layers possible to avoid the possibility of over fitting. However, too small a framework will be too rigid to properly fit complex potential energy surfaces.
 
-At the moment, I run these locally:
+These jobs can be run locally:
 
 #+BEGIN_SRC python :results silent
 from amp import Amp
@@ -411,55 +411,54 @@ for n in [2, 3]:
                regression=NeuralNetwork(hiddenlayers=(2, '{0}'.format(n))))
 
     calc.train("./train.db", # The training data
-               cores=8,
+               cores=1,
                global_search=None, # not found the simulated annealing feature useful
                extend_variables=False) # feature does not work properly and will crash
 #+END_SRC
 
-Once I figure out how to compile the necessary AMP files on Gilgamesh, we can submit these to the queue:
+We can also submit them to the queue on Gilgamesh:
 
 #+BEGIN_SRC python
 import os
 import subprocess
+import time
 
 home = os.getcwd()
 
-# We will try an iteration for 2, 3, and 4 nodes with 2 hidden layers.
-for n, i in [[2, 0], [3, 0], [4, 0]]:
+# We will try an iteration for 2 and 3 nodes with 2 hidden layers.
+for n in [2, 3]:
 
-    label = 'l2n{0}i{1}'.format(n, i)
+    label = '{0}-{0}'.format(n)
     wd = os.path.join(home, 'networks/' + label)
 
     if not os.path.exists(wd):
         os.makedirs(wd)
-    else:
-        pass
     os.chdir(wd)
 
-    run_amp = """#!/usr/bin/env python
+    run_amp = '''#!/usr/bin/env python
 from amp import Amp
 from amp.descriptor import *
 from amp.regression import *
 
-calc = Amp(label="./networks/{0}/",
+calc = Amp(label="./",
            descriptor=Behler(cutoff=6.0),
-           regression=NeuralNetwork(hiddenlayers=(2, {1})))
+           regression=NeuralNetwork(hiddenlayers=(2, {0})))
 
 calc.train("../../train.db", # The training data
-           cores=4,
+           cores=1,
            global_search=None, # not found the simulated annealing feature useful
            extend_variables=False) # feature does not work properly and will crash
-""".format(label, n)
+'''.format(n)
 
-    cmd = """#!/bin/bash
+    cmd = '''#!/bin/bash
 #PBS -N {0}
-#PBS -l nodes=1:ppn=4
+#PBS -l nodes=1:ppn=1
 #PBS -l walltime=24:00:00
-#PBS -l mem=3GB
+#PBS -l mem=2GB
 #PBS -joe
 cd $PBS_O_WORKDIR
 ./submit.py
-#end""".format(wd)
+#end'''.format(wd)
 
     with open('submit.py', 'w') as f:
         f.write(run_amp)
@@ -469,8 +468,14 @@ cd $PBS_O_WORKDIR
         f.write(cmd)
 
     subprocess.call(['qsub', 'submit.sh'])
+    time.sleep(5)
     os.unlink('submit.sh')
+    os.chdir(wd)
 #+END_SRC
+
+#+RESULTS:
+: 1305344.gilgamesh.cheme.cmu.edu
+: 1305345.gilgamesh.cheme.cmu.edu
 
 Once the calculations finish we can check their convergence using the code below. These are trivial networks to train, so convergence should not be an issue. If there is a problem, restart the calculation to try again. This can be a difficult and time consuming part of the process for more complex system. 
 
