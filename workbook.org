@@ -684,9 +684,26 @@ for r, d, f in os.walk('networks'):
 #+END_SRC
 
 ** Applications
+Now we can try and apply our neural networks to things it was not fit to.
+
+For this, we will use or two neural networks jointly which will save us a good amount of time validating the networks as we begin to extrapolate. This is demonstrated in the next section. 
+
 
 *** Geometry optimization
-#+BEGIN_SRC python
+First, we expand the region of equation of state to see how well it extrapolates. In Figure ref:fig-app-eos, we expand the region of the original equation of state beyond the black dashed lines.
+
+#+label: fig-app-eos
+#+caption: Expansion of the equation of state beyond the region incorporated into the training set.
+#+attr_org: :width 600
+[[./images/app-eos.png]]
+
+At extreme stretch (factor > 2.07%) both neural networks agree because we have trained it nearly to the cutoff radius of 6.0 $\AA$.
+
+As soon as we strain the lattice below the trained region, the network predictions quickly diverge. This indicates that the training set is not useful for predictions in this region.
+
+We performed 1,000 calculations to produce this figure. To have validated all 1,000 points with DFT would be too time consuming. Instead, we rely on disagreement between neural networks with different framework to probe poorly fitted regions.
+
+#+BEGIN_SRC python :results silent
 from amp import Amp
 import numpy as np
 from ase.lattice.cubic import FaceCenteredCubic
@@ -718,17 +735,40 @@ for calc in ['networks/2-2/',
 
 res = abs(np.array(D['3'].values()) - np.array(D['2'].values()))
 
-#plt.plot(D['2'].keys(), res)
-#plt.show()
+f, ax = plt.subplots(2, 1, sharex=True)
+ax[0].plot(D['2'].keys(), D['2'].values(), 'b', lw=2, label='2-2')
+ax[0].plot(D['3'].keys(), D['3'].values(), 'r', lw=2, label='3-3')
+ax[0].plot([0.85, 0.85], [2, -6], 'k--')
+ax[0].plot([2.07, 2.07], [2, -6], 'k--')
+ax[0].set_ylabel('Potential energy (eV)')
+ax[0].set_xlim(0.6, 2.5)
+ax[0].legend(loc='best')
 
-plt.plot(D['2'].keys(), D['2'].values(), 'b')
-plt.plot(D['3'].keys(), D['3'].values(), 'r')
-plt.show()
+ax[1].plot([0.85, 0.85], [0, 1.8], 'k--')
+ax[1].plot([2.07, 2.07], [0, 1.8], 'k--')
+ax[1].plot(D['2'].keys(), res, 'k', lw=2)
+ax[1].set_ylabel('NN energy difference (eV)')
+ax[1].set_ylim(0, 1.8)
+ax[1].set_xlabel('Strain/stretch factor (%)')
+plt.tight_layout(w_pad=0.0)
+plt.savefig('./images/app-eos.png')
 #+END_SRC
 
-#+RESULTS:
+*** More complex calculations
+Here we attempt to calculate the vacancy formation energy for fcc Pd. This is calculated as shown in Equation ref:eqn-vac.
 
-*** larger structures
+\begin{eqnarray}
+E_v = E_f - \frac{n_i - 1}{n_i} E_i \label{eqn-vac}
+\end{eqnarray}
+
+from the literature (http://www.cs.sandia.gov/~aematts/pdffiles/PRB66214110.pdf), we know that DFT-GGA should predict a vacancy formation energy of about 1.50 eV.
+
+- Vacancy formation energy with 2-2 framework NN: 4.170 eV
+
+- Vacancy formation energy with 3-3 framework NN: 0.411 eV
+
+neither network does a good job predicting the vacancy formation energy. This is because the networks do not know how to calculate the energy of an fcc lattice with a missing atom.
+
 #+BEGIN_SRC python
 from amp import Amp
 import numpy as np
@@ -758,7 +798,6 @@ for calc in ['networks/2-2/',
     ve = nrg1 - (26/27.)*nrg0
 
     print 'Vacancy formation energy with {0} framework NN: {1:1.3f} eV'.format(fw, ve)
-
 #+END_SRC
 
 #+RESULTS:
@@ -769,14 +808,16 @@ BFGS:   2  23:22:24     -131.407465       0.1290
 BFGS:   3  23:22:29     -131.408432       0.1178
 BFGS:   4  23:22:34     -131.409158       0.0511
 BFGS:   5  23:22:39     -131.406953       0.0411
-Vacancy formation energy with 2-2 framework NN: 4.170
+Vacancy formation energy with 2-2 framework NN: 4.170 eV
 BFGS:   0  23:22:44     -135.182786       0.0558
 BFGS:   1  23:22:49     -135.182910       0.0554
 BFGS:   2  23:22:54     -135.183387       0.0320
-Vacancy formation energy with 3-3 framework NN: 0.411
+Vacancy formation energy with 3-3 framework NN: 0.411 eV
 #+end_example
 
 *** Molecular dynamics
+Finally, we try 
+
 #+BEGIN_SRC python :results silent
 from __future__ import print_function
 from ase.lattice.cubic import FaceCenteredCubic
@@ -791,7 +832,7 @@ atoms = FaceCenteredCubic('Pd',
                                       [1, 0, 1],
                                       [1, 1, 0]],
                           latticeconstant=3.939,
-                          size=(5, 5, 5))
+                          size=(3, 3, 3))
 
 # Describe the interatomic interactions with the Effective Medium Theory
 atoms.set_calculator(Amp('networks/2-2/'))
@@ -799,7 +840,7 @@ atoms.set_calculator(Amp('networks/2-2/'))
 # We want to run MD with constant energy using the Langevin algorithm
 # with a time step of 5 fs, the temperature T and the friction
 # coefficient to 0.02 atomic units.
-dyn = Langevin(atoms, 5 * units.fs, 800 * units.kB, 0.002)
+dyn = Langevin(atoms, 5 * units.fs, 900 * units.kB, 0.002)
 
 
 def printenergy(a=atoms):  # store a reference to atoms in the definition.
@@ -807,22 +848,37 @@ def printenergy(a=atoms):  # store a reference to atoms in the definition.
     epot = a.get_potential_energy() / len(a)
     ekin = a.get_kinetic_energy() / len(a)
     
-dyn.attach(printenergy, interval=1)
+dyn.attach(printenergy, interval=10)
 
 # We also want to save the positions of all atoms after every time step.
 traj = Trajectory('MD.traj', 'w', atoms)
-dyn.attach(traj.write, interval=1)
+dyn.attach(traj.write, interval=10)
 
 # Now run the dynamics
-printenergy()
-dyn.run(1000)
+dyn.run(2000)
 #+END_SRC
 
-#+BEGIN_SRC python
+#+BEGIN_SRC python :results silent
 from ase.io.trajectory import Trajectory
+from amp import Amp
+import matplotlib.pyplot as plt
 from ase.visualize import view
 
 traj = Trajectory('MD.traj', 'r')
 
-view(traj)
+
+E2, E3 = [], []
+for atoms in traj:
+   E2 += [atoms.get_potential_energy()]
+
+   atoms.set_calculator(Amp('networks/3-3/'))
+   E3 += [atoms.get_potential_energy()]
+
+# We can use this to visualize every 10th step of the MD simulation.
+#view(traj)
+
+plt.figure(figsize=(6, 4))
+#plt.plot(range(len(E2)), E2)
+#plt.plot(range(len(E3)), E3)
+#plt.show()
 #+END_SRC
