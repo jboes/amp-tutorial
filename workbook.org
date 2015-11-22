@@ -384,7 +384,7 @@ for d in db.select(['train_set=True']):
 
 Now we have sudo-randomly labeled 10% of our calculations for validation, and the rest are waiting to be trained in the new train.db file. This file is also attached: \attachfile{train.db}{(double-click to open)}.
 
-** training neural networks
+** Training neural networks
 For all of out neural networks, we will be using the Behler-Parenello (BP) framework for distinguishing between geometries of atoms. Little to no work is published on how to systematically chose an appropriate number of variables for your BP framework, so we simply use the default settings in AMP for now. However, it is worth mentioning that a single G1 type variable (simplest possible descriptor) could be used to describe the fcc EOS, if that is all we are interested in.
 
 We also need to define a cutoff radius for our system which will determine the maximum distance that the BP framework considers atoms to be interacting. 6 $\AA$ is a typical value used in the literature for metals with no appreciable long range interactions, which we will be using here.
@@ -529,45 +529,68 @@ for d in db.select():
     db.update(d.id, NN2=nrg2, NN3=nrg3)
 #+END_SRC
 
-#+RESULTS:
-
 *** Analysis of residuals
+First we look at the residual errors of all the data in the database for each of our frameworks shown in Figure ref:fig-residuals-NN2 and ref:fig-residuals-NN3. For both fits, the validation set has lower RMSE than the training set. This is a good indication that neither has been over fit, which we can also observe for this simple example, since the validation points follow the same trends observed for the training set data. This is also a good example of how adding additional, unnecessary elements to the framework leads to lower overall fitting accuracy for.
 
-#+BEGIN_SRC python
+#+label: fig-residuals-NN2
+#+caption: Residual errors to the 2-2 framework neural network.
+#+attr_org: :width 600
+[[./images/residuals-NN2.png]]
+
+#+label: fig-residuals-NN3
+#+caption: Residual errors to the 3-3 framework neural network.
+#+attr_org: :width 600
+[[./images/residuals-NN3.png]]
+
+#+BEGIN_SRC python :results silent
 import numpy as np
 import matplotlib.pyplot as plt
 from ase.db import connect
 from amp import Amp
+import os
 
 db = connect('data.db')
 
+for n in [2, 3]:
 
-for r, d, f in os.walk('networks'):
-    if 'trained-parameters.json' in f:
-        calc = Amp(load=r + '/')
+    Qe, Ne, vol, ind = [], [], [], []
+    for d in db.select():
 
-        Qe, Ne, ind = [], [], []
-        for d in db.select():
+        Qe += [d.energy]
+        vol += [d.volume]
 
-            Qe += [d.energy]
+        Ne += [d['NN{0}'.format(n)]]
+        ind += [d.train_set]
 
-            atoms = db.get_atoms(d.id)
-            atoms.set_calculator(calc)
+    res = np.array(Ne) - np.array(Qe)
+    mask = np.array(ind)
+    valid = np.ma.masked_array(res, mask)
+    train = np.ma.masked_array(res, ~mask)
+    vRMSE = np.sqrt(np.sum(valid ** 2)/ len(valid))
+    tRMSE = np.sqrt(np.sum(train ** 2)/ len(train))
 
-            Ne += [atoms.get_potential_energy()]
-            
-            if d.train_set:
-                ind += [d.id]
+    plt.figure(figsize=(6, 4))
 
+    plt.text(60, 0.0085, 
+             'Trained RMSE: {0:1.2f} meV/atom'.format(tRMSE * 1000),
+             color='b', ha='left')
+    plt.text(60, 0.0070, 
+             'Validation RMSE: {0:1.2f} meV/atom'.format(vRMSE * 1000),
+             color='r', ha='left')
 
-print E, T
+    plt.scatter(vol, train, color='b')
+    plt.scatter(vol, valid, color='r')
+    plt.plot([min(vol), max(vol)], [0, 0], 'k--')
+    plt.xlim(min(vol), max(vol))
+    plt.ylim(-0.01, 0.01)
+    plt.xlabel('Volume ($\AA^{3}$/atom)')
+    plt.ylabel('Residual error (eV/atom)')
+    plt.tight_layout()
+    plt.savefig('./images/residuals-NN{0}.png'.format(n))
 #+END_SRC
 
-#+RESULTS:
-: [-1.82183154, -2.12451479, -2.40659092, -2.66913952, -2.91318806, -3.13972135, -3.34971851, -3.54402685, -3.72354262, -3.88903296, -4.0413238, -4.18111055, -4.30914678, -4.42604711, -4.53226381, -4.62878096, -4.71595845, -4.79436084, -4.86449487, -4.92686978, -4.98190289, -5.03007642, -5.07173281, -5.10732861, -5.13718212, -5.16166074, -5.18113178, -5.1958496, -5.2061347, -5.21226682, -5.21453625, -5.2131086, -5.20831732, -5.20036488, -5.18942963, -5.17575784, -5.15953364, -5.14094354, -5.12015574, -5.09731456, -5.0725905, -5.04614267, -5.01812361, -4.98853965, -4.95770173, -4.92564425, -4.89246756, -4.85825986, -4.82316291, -4.78722856, -4.75055151, -4.71318881, -4.67526248, -4.63682833, -4.5979701, -4.55871077, -4.51913347, -4.47929965, -4.43925727, -4.39907507, -4.35880809, -4.31844455, -4.27808664, -4.2377082, -4.19740961, -4.15719395, -4.11706336, -4.07710937, -4.03731067, -3.99768244, -3.95828907, -3.7272802, -3.50827751, -3.30303487, -3.11286283, -2.93783672, -2.77770249, -2.63206524, -2.5000579, -2.38082047, -2.27333336, -2.17636931, -2.08955084, -2.0117631, -1.94218765, -1.88018877, -1.82479553, -1.77541519, -1.73166815, -1.69297186, -1.65856988, -1.6275089, -1.60075712, -1.57732054, -1.55693127, -1.53917411, -1.52375031, -1.51053875, -1.49928125, -1.48975975] [True, True, True, True, True, True, True, True, True, False, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, False, True, True, True, True, True, True, False, True, True, True, True, True, True, True, False, True, True, True, True, True, True, True, False, True, True, True, True, True, True, True, True, False, True, True, True, True, True, False, False, True, True, True, True, True, True, True, True, True, True, False, False, True, True, True, True, True, True, True, True, True, True, True, True, True, True]
-
 *** Recreate the equation of state
-In this section, we recreate the equation of state using both of the neural networks and the same methodology as with DFT. The results are shown in Figures ref:fig-eos-NN2 and ref:fig-eos-NN3 for the 2-2 and 3-3 frameworks, respectively.
+Next, we recreate the equation of state using both of the neural networks and the same methodology as with DFT. The results are shown in Figures ref:fig-eos-NN2 and ref:fig-eos-NN3 for the 2-2 and 3-3 frameworks, respectively.
 
 #+label: fig-eos-NN2
 #+caption: Equation of state for fcc Pd as calculated from a neural network with 2-2 framework.
@@ -656,7 +679,1150 @@ for r, d, f in os.walk('networks'):
         ax2.set_ylim(0, 40)
 
         ax1.set_xlabel('Volume ($\AA^{3}$/atom)')
-        plt.title("Equation of state: NN {0}".format(n))
         plt.tight_layout()
         plt.savefig('./images/eos-NN{0}.png'.format(n[-1]))
 #+END_SRC
+
+** Applications
+
+*** Geometry optimization
+#+BEGIN_SRC python
+from amp import Amp
+import numpy as np
+from ase.lattice.cubic import FaceCenteredCubic
+import matplotlib.pyplot as plt
+import collections
+
+D = {}
+for calc in ['networks/2-2/',
+             'networks/3-3/']:
+
+    D[calc[-2]] = collections.OrderedDict()
+    for x in np.linspace(0.60, 2.5, 1000.):
+
+        atoms = FaceCenteredCubic('Pd',
+                                  directions=[[0, 1, 1],
+                                              [1, 0, 1],
+                                              [1, 1, 0]],
+                                  latticeconstant=3.939)
+
+        delta = np.array([[x, 0., 0.],
+                          [0., x, 0.],
+                          [0., 0., x]])
+        atoms.set_cell(np.dot(atoms.get_cell(), delta),
+                       scale_atoms=True)
+
+        atoms.set_calculator(Amp(calc))
+
+        D[calc[-2]][x] = atoms.get_potential_energy()
+
+res = abs(np.array(D['3'].values()) - np.array(D['2'].values()))
+
+#plt.plot(D['2'].keys(), res)
+#plt.show()
+
+plt.plot(D['2'].keys(), D['2'].values(), 'b')
+plt.plot(D['3'].keys(), D['3'].values(), 'r')
+plt.show()
+#+END_SRC
+
+#+RESULTS:
+
+*** larger structures
+#+BEGIN_SRC python
+from amp import Amp
+import numpy as np
+from ase.lattice.cubic import FaceCenteredCubic
+import matplotlib.pyplot as plt
+from ase.visualize import view
+from ase.optimize import BFGS
+
+for calc in ['networks/2-2/',
+             'networks/3-3/']:
+    atoms = FaceCenteredCubic('Pd',
+                              directions=[[0, 1, 1],
+                                          [1, 0, 1],
+                                          [1, 1, 0]],
+                              latticeconstant=3.939)
+    atoms.set_calculator(Amp(calc))
+    atoms *= (3, 3, 3)
+
+    nrg0 = atoms.get_potential_energy()
+
+    del atoms[0]
+    dyn = BFGS(atoms)
+    dyn.run(fmax=0.05)
+
+    nrg1 = atoms.get_potential_energy()
+    fw = calc.split('/')[-2]
+    ve = nrg1 - (26/27.)*nrg0
+
+    print 'Vacancy formation energy with {0} framework NN: {1:1.3f} eV'.format(fw, ve)
+
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+BFGS:   0  23:22:14     -131.319326       0.6402
+BFGS:   1  23:22:19     -131.359079       0.4868
+BFGS:   2  23:22:24     -131.407465       0.1290
+BFGS:   3  23:22:29     -131.408432       0.1178
+BFGS:   4  23:22:34     -131.409158       0.0511
+BFGS:   5  23:22:39     -131.406953       0.0411
+Vacancy formation energy with 2-2 framework NN: 4.170
+BFGS:   0  23:22:44     -135.182786       0.0558
+BFGS:   1  23:22:49     -135.182910       0.0554
+BFGS:   2  23:22:54     -135.183387       0.0320
+Vacancy formation energy with 3-3 framework NN: 0.411
+#+end_example
+
+
+*** Molecular dynamics
+#+BEGIN_SRC python
+from __future__ import print_function
+from ase.lattice.cubic import FaceCenteredCubic
+from ase.md.langevin import Langevin
+from ase.io.trajectory import Trajectory
+from ase import units
+from amp import Amp
+
+# Set up a crystal
+atoms = FaceCenteredCubic('Pd',
+                          directions=[[0, 1, 1],
+                                      [1, 0, 1],
+                                      [1, 1, 0]],
+                          latticeconstant=3.939,
+                          size=(5, 5, 5))
+
+# Describe the interatomic interactions with the Effective Medium Theory
+atoms.set_calculator(Amp('networks/2-2/'))
+
+# We want to run MD with constant energy using the Langevin algorithm
+# with a time step of 5 fs, the temperature T and the friction
+# coefficient to 0.02 atomic units.
+dyn = Langevin(atoms, 5 * units.fs, 800 * units.kB, 0.002)
+
+
+def printenergy(a=atoms):  # store a reference to atoms in the definition.
+    """Function to print the potential, kinetic and total energy."""
+    epot = a.get_potential_energy() / len(a)
+    ekin = a.get_kinetic_energy() / len(a)
+    print('Energy per atom: Epot = %.3feV  Ekin = %.3feV (T=%3.0fK)  '
+          'Etot = %.3feV' % (epot, ekin, ekin / (1.5 * units.kB), epot + ekin))
+    
+dyn.attach(printenergy, interval=1)
+
+# We also want to save the positions of all atoms after every time step.
+traj = Trajectory('MD.traj', 'w', atoms)
+dyn.attach(traj.write, interval=1)
+
+# Now run the dynamics
+printenergy()
+dyn.run(1000)
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+Energy per atom: Epot = -5.215eV  Ekin = 0.000eV (T=  0K)  Etot = -5.215eV
+Energy per atom: Epot = -5.215eV  Ekin = 0.000eV (T=  2K)  Etot = -5.214eV
+Energy per atom: Epot = -5.214eV  Ekin = 0.001eV (T=  5K)  Etot = -5.214eV
+Energy per atom: Epot = -5.214eV  Ekin = 0.001eV (T=  9K)  Etot = -5.213eV
+Energy per atom: Epot = -5.214eV  Ekin = 0.002eV (T= 13K)  Etot = -5.212eV
+Energy per atom: Epot = -5.214eV  Ekin = 0.002eV (T= 17K)  Etot = -5.211eV
+Energy per atom: Epot = -5.213eV  Ekin = 0.003eV (T= 20K)  Etot = -5.210eV
+Energy per atom: Epot = -5.212eV  Ekin = 0.003eV (T= 22K)  Etot = -5.209eV
+Energy per atom: Epot = -5.211eV  Ekin = 0.003eV (T= 21K)  Etot = -5.208eV
+Energy per atom: Epot = -5.209eV  Ekin = 0.003eV (T= 20K)  Etot = -5.207eV
+Energy per atom: Epot = -5.208eV  Ekin = 0.002eV (T= 19K)  Etot = -5.206eV
+Energy per atom: Epot = -5.207eV  Ekin = 0.002eV (T= 17K)  Etot = -5.204eV
+Energy per atom: Epot = -5.205eV  Ekin = 0.002eV (T= 16K)  Etot = -5.203eV
+Energy per atom: Epot = -5.204eV  Ekin = 0.002eV (T= 15K)  Etot = -5.202eV
+Energy per atom: Epot = -5.204eV  Ekin = 0.002eV (T= 15K)  Etot = -5.202eV
+Energy per atom: Epot = -5.203eV  Ekin = 0.002eV (T= 16K)  Etot = -5.201eV
+Energy per atom: Epot = -5.203eV  Ekin = 0.002eV (T= 18K)  Etot = -5.201eV
+Energy per atom: Epot = -5.204eV  Ekin = 0.003eV (T= 20K)  Etot = -5.201eV
+Energy per atom: Epot = -5.204eV  Ekin = 0.003eV (T= 22K)  Etot = -5.201eV
+Energy per atom: Epot = -5.205eV  Ekin = 0.003eV (T= 25K)  Etot = -5.202eV
+Energy per atom: Epot = -5.206eV  Ekin = 0.003eV (T= 26K)  Etot = -5.202eV
+Energy per atom: Epot = -5.206eV  Ekin = 0.003eV (T= 26K)  Etot = -5.203eV
+Energy per atom: Epot = -5.207eV  Ekin = 0.003eV (T= 26K)  Etot = -5.204eV
+Energy per atom: Epot = -5.207eV  Ekin = 0.003eV (T= 24K)  Etot = -5.204eV
+Energy per atom: Epot = -5.207eV  Ekin = 0.003eV (T= 21K)  Etot = -5.205eV
+Energy per atom: Epot = -5.208eV  Ekin = 0.003eV (T= 20K)  Etot = -5.205eV
+Energy per atom: Epot = -5.208eV  Ekin = 0.002eV (T= 17K)  Etot = -5.206eV
+Energy per atom: Epot = -5.208eV  Ekin = 0.002eV (T= 18K)  Etot = -5.206eV
+Energy per atom: Epot = -5.208eV  Ekin = 0.003eV (T= 20K)  Etot = -5.205eV
+Energy per atom: Epot = -5.208eV  Ekin = 0.003eV (T= 23K)  Etot = -5.205eV
+Energy per atom: Epot = -5.208eV  Ekin = 0.004eV (T= 28K)  Etot = -5.205eV
+Energy per atom: Epot = -5.208eV  Ekin = 0.004eV (T= 33K)  Etot = -5.204eV
+Energy per atom: Epot = -5.208eV  Ekin = 0.005eV (T= 39K)  Etot = -5.203eV
+Energy per atom: Epot = -5.208eV  Ekin = 0.006eV (T= 43K)  Etot = -5.202eV
+Energy per atom: Epot = -5.207eV  Ekin = 0.006eV (T= 45K)  Etot = -5.201eV
+Energy per atom: Epot = -5.206eV  Ekin = 0.006eV (T= 45K)  Etot = -5.200eV
+Energy per atom: Epot = -5.205eV  Ekin = 0.005eV (T= 42K)  Etot = -5.200eV
+Energy per atom: Epot = -5.204eV  Ekin = 0.005eV (T= 38K)  Etot = -5.199eV
+Energy per atom: Epot = -5.203eV  Ekin = 0.005eV (T= 36K)  Etot = -5.198eV
+Energy per atom: Epot = -5.202eV  Ekin = 0.004eV (T= 34K)  Etot = -5.198eV
+Energy per atom: Epot = -5.202eV  Ekin = 0.004eV (T= 33K)  Etot = -5.198eV
+Energy per atom: Epot = -5.202eV  Ekin = 0.004eV (T= 34K)  Etot = -5.197eV
+Energy per atom: Epot = -5.202eV  Ekin = 0.005eV (T= 35K)  Etot = -5.197eV
+Energy per atom: Epot = -5.202eV  Ekin = 0.005eV (T= 37K)  Etot = -5.198eV
+Energy per atom: Epot = -5.203eV  Ekin = 0.005eV (T= 38K)  Etot = -5.198eV
+Energy per atom: Epot = -5.204eV  Ekin = 0.005eV (T= 41K)  Etot = -5.199eV
+Energy per atom: Epot = -5.205eV  Ekin = 0.005eV (T= 42K)  Etot = -5.199eV
+Energy per atom: Epot = -5.206eV  Ekin = 0.006eV (T= 44K)  Etot = -5.200eV
+Energy per atom: Epot = -5.206eV  Ekin = 0.006eV (T= 46K)  Etot = -5.200eV
+Energy per atom: Epot = -5.207eV  Ekin = 0.006eV (T= 46K)  Etot = -5.201eV
+Energy per atom: Epot = -5.207eV  Ekin = 0.006eV (T= 45K)  Etot = -5.202eV
+Energy per atom: Epot = -5.208eV  Ekin = 0.006eV (T= 44K)  Etot = -5.202eV
+Energy per atom: Epot = -5.208eV  Ekin = 0.006eV (T= 44K)  Etot = -5.202eV
+Energy per atom: Epot = -5.208eV  Ekin = 0.005eV (T= 42K)  Etot = -5.202eV
+Energy per atom: Epot = -5.207eV  Ekin = 0.006eV (T= 43K)  Etot = -5.202eV
+Energy per atom: Epot = -5.207eV  Ekin = 0.006eV (T= 44K)  Etot = -5.202eV
+Energy per atom: Epot = -5.207eV  Ekin = 0.006eV (T= 46K)  Etot = -5.201eV
+Energy per atom: Epot = -5.207eV  Ekin = 0.006eV (T= 48K)  Etot = -5.200eV
+Energy per atom: Epot = -5.206eV  Ekin = 0.007eV (T= 51K)  Etot = -5.199eV
+Energy per atom: Epot = -5.205eV  Ekin = 0.007eV (T= 55K)  Etot = -5.198eV
+Energy per atom: Epot = -5.204eV  Ekin = 0.007eV (T= 57K)  Etot = -5.197eV
+Energy per atom: Epot = -5.203eV  Ekin = 0.008eV (T= 59K)  Etot = -5.196eV
+Energy per atom: Epot = -5.202eV  Ekin = 0.008eV (T= 60K)  Etot = -5.194eV
+Energy per atom: Epot = -5.201eV  Ekin = 0.008eV (T= 60K)  Etot = -5.193eV
+Energy per atom: Epot = -5.199eV  Ekin = 0.008eV (T= 61K)  Etot = -5.191eV
+Energy per atom: Epot = -5.198eV  Ekin = 0.008eV (T= 59K)  Etot = -5.190eV
+Energy per atom: Epot = -5.197eV  Ekin = 0.008eV (T= 59K)  Etot = -5.189eV
+Energy per atom: Epot = -5.196eV  Ekin = 0.007eV (T= 56K)  Etot = -5.188eV
+Energy per atom: Epot = -5.195eV  Ekin = 0.007eV (T= 55K)  Etot = -5.188eV
+Energy per atom: Epot = -5.195eV  Ekin = 0.007eV (T= 55K)  Etot = -5.188eV
+Energy per atom: Epot = -5.195eV  Ekin = 0.007eV (T= 56K)  Etot = -5.188eV
+Energy per atom: Epot = -5.195eV  Ekin = 0.008eV (T= 60K)  Etot = -5.188eV
+Energy per atom: Epot = -5.196eV  Ekin = 0.008eV (T= 64K)  Etot = -5.188eV
+Energy per atom: Epot = -5.198eV  Ekin = 0.009eV (T= 66K)  Etot = -5.189eV
+Energy per atom: Epot = -5.199eV  Ekin = 0.009eV (T= 71K)  Etot = -5.190eV
+Energy per atom: Epot = -5.200eV  Ekin = 0.010eV (T= 74K)  Etot = -5.191eV
+Energy per atom: Epot = -5.201eV  Ekin = 0.010eV (T= 77K)  Etot = -5.191eV
+Energy per atom: Epot = -5.202eV  Ekin = 0.010eV (T= 75K)  Etot = -5.192eV
+Energy per atom: Epot = -5.203eV  Ekin = 0.010eV (T= 75K)  Etot = -5.193eV
+Energy per atom: Epot = -5.203eV  Ekin = 0.009eV (T= 73K)  Etot = -5.193eV
+Energy per atom: Epot = -5.203eV  Ekin = 0.009eV (T= 69K)  Etot = -5.194eV
+Energy per atom: Epot = -5.203eV  Ekin = 0.009eV (T= 68K)  Etot = -5.194eV
+Energy per atom: Epot = -5.203eV  Ekin = 0.009eV (T= 67K)  Etot = -5.194eV
+Energy per atom: Epot = -5.202eV  Ekin = 0.009eV (T= 68K)  Etot = -5.194eV
+Energy per atom: Epot = -5.202eV  Ekin = 0.009eV (T= 69K)  Etot = -5.193eV
+Energy per atom: Epot = -5.202eV  Ekin = 0.009eV (T= 70K)  Etot = -5.193eV
+Energy per atom: Epot = -5.202eV  Ekin = 0.010eV (T= 74K)  Etot = -5.192eV
+Energy per atom: Epot = -5.201eV  Ekin = 0.010eV (T= 77K)  Etot = -5.191eV
+Energy per atom: Epot = -5.201eV  Ekin = 0.010eV (T= 79K)  Etot = -5.191eV
+Energy per atom: Epot = -5.200eV  Ekin = 0.010eV (T= 79K)  Etot = -5.190eV
+Energy per atom: Epot = -5.199eV  Ekin = 0.010eV (T= 79K)  Etot = -5.189eV
+Energy per atom: Epot = -5.198eV  Ekin = 0.010eV (T= 78K)  Etot = -5.188eV
+Energy per atom: Epot = -5.197eV  Ekin = 0.010eV (T= 76K)  Etot = -5.187eV
+Energy per atom: Epot = -5.196eV  Ekin = 0.010eV (T= 76K)  Etot = -5.187eV
+Energy per atom: Epot = -5.196eV  Ekin = 0.010eV (T= 75K)  Etot = -5.186eV
+Energy per atom: Epot = -5.195eV  Ekin = 0.010eV (T= 76K)  Etot = -5.186eV
+Energy per atom: Epot = -5.195eV  Ekin = 0.010eV (T= 77K)  Etot = -5.185eV
+Energy per atom: Epot = -5.195eV  Ekin = 0.010eV (T= 79K)  Etot = -5.185eV
+Energy per atom: Epot = -5.196eV  Ekin = 0.011eV (T= 82K)  Etot = -5.185eV
+Energy per atom: Epot = -5.196eV  Ekin = 0.011eV (T= 84K)  Etot = -5.185eV
+Energy per atom: Epot = -5.197eV  Ekin = 0.011eV (T= 85K)  Etot = -5.186eV
+Energy per atom: Epot = -5.198eV  Ekin = 0.011eV (T= 87K)  Etot = -5.187eV
+Energy per atom: Epot = -5.199eV  Ekin = 0.011eV (T= 89K)  Etot = -5.187eV
+Energy per atom: Epot = -5.199eV  Ekin = 0.012eV (T= 91K)  Etot = -5.188eV
+Energy per atom: Epot = -5.200eV  Ekin = 0.012eV (T= 90K)  Etot = -5.188eV
+Energy per atom: Epot = -5.200eV  Ekin = 0.012eV (T= 90K)  Etot = -5.188eV
+Energy per atom: Epot = -5.200eV  Ekin = 0.012eV (T= 89K)  Etot = -5.189eV
+Energy per atom: Epot = -5.200eV  Ekin = 0.011eV (T= 87K)  Etot = -5.189eV
+Energy per atom: Epot = -5.200eV  Ekin = 0.011eV (T= 87K)  Etot = -5.189eV
+Energy per atom: Epot = -5.200eV  Ekin = 0.011eV (T= 86K)  Etot = -5.188eV
+Energy per atom: Epot = -5.199eV  Ekin = 0.011eV (T= 86K)  Etot = -5.188eV
+Energy per atom: Epot = -5.199eV  Ekin = 0.011eV (T= 86K)  Etot = -5.188eV
+Energy per atom: Epot = -5.198eV  Ekin = 0.011eV (T= 88K)  Etot = -5.187eV
+Energy per atom: Epot = -5.198eV  Ekin = 0.012eV (T= 90K)  Etot = -5.186eV
+Energy per atom: Epot = -5.198eV  Ekin = 0.012eV (T= 91K)  Etot = -5.186eV
+Energy per atom: Epot = -5.197eV  Ekin = 0.012eV (T= 94K)  Etot = -5.185eV
+Energy per atom: Epot = -5.196eV  Ekin = 0.013eV (T= 97K)  Etot = -5.184eV
+Energy per atom: Epot = -5.195eV  Ekin = 0.013eV (T= 99K)  Etot = -5.183eV
+Energy per atom: Epot = -5.194eV  Ekin = 0.013eV (T=100K)  Etot = -5.181eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.013eV (T=100K)  Etot = -5.180eV
+Energy per atom: Epot = -5.192eV  Ekin = 0.013eV (T=100K)  Etot = -5.179eV
+Energy per atom: Epot = -5.191eV  Ekin = 0.013eV (T= 98K)  Etot = -5.178eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.013eV (T= 99K)  Etot = -5.177eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.013eV (T=100K)  Etot = -5.177eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.013eV (T= 98K)  Etot = -5.177eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.013eV (T= 98K)  Etot = -5.177eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.012eV (T= 96K)  Etot = -5.178eV
+Energy per atom: Epot = -5.191eV  Ekin = 0.013eV (T=100K)  Etot = -5.178eV
+Energy per atom: Epot = -5.192eV  Ekin = 0.013eV (T=103K)  Etot = -5.179eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.014eV (T=107K)  Etot = -5.180eV
+Energy per atom: Epot = -5.195eV  Ekin = 0.014eV (T=111K)  Etot = -5.181eV
+Energy per atom: Epot = -5.196eV  Ekin = 0.015eV (T=113K)  Etot = -5.181eV
+Energy per atom: Epot = -5.197eV  Ekin = 0.015eV (T=117K)  Etot = -5.182eV
+Energy per atom: Epot = -5.198eV  Ekin = 0.015eV (T=119K)  Etot = -5.183eV
+Energy per atom: Epot = -5.199eV  Ekin = 0.015eV (T=120K)  Etot = -5.184eV
+Energy per atom: Epot = -5.200eV  Ekin = 0.015eV (T=119K)  Etot = -5.184eV
+Energy per atom: Epot = -5.200eV  Ekin = 0.015eV (T=119K)  Etot = -5.184eV
+Energy per atom: Epot = -5.200eV  Ekin = 0.016eV (T=121K)  Etot = -5.184eV
+Energy per atom: Epot = -5.199eV  Ekin = 0.015eV (T=119K)  Etot = -5.184eV
+Energy per atom: Epot = -5.199eV  Ekin = 0.015eV (T=117K)  Etot = -5.184eV
+Energy per atom: Epot = -5.198eV  Ekin = 0.015eV (T=116K)  Etot = -5.183eV
+Energy per atom: Epot = -5.197eV  Ekin = 0.015eV (T=113K)  Etot = -5.183eV
+Energy per atom: Epot = -5.196eV  Ekin = 0.014eV (T=109K)  Etot = -5.182eV
+Energy per atom: Epot = -5.195eV  Ekin = 0.014eV (T=108K)  Etot = -5.181eV
+Energy per atom: Epot = -5.194eV  Ekin = 0.014eV (T=107K)  Etot = -5.181eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.014eV (T=107K)  Etot = -5.180eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.014eV (T=105K)  Etot = -5.179eV
+Energy per atom: Epot = -5.192eV  Ekin = 0.014eV (T=105K)  Etot = -5.178eV
+Energy per atom: Epot = -5.191eV  Ekin = 0.013eV (T=104K)  Etot = -5.177eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.013eV (T=104K)  Etot = -5.177eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.014eV (T=105K)  Etot = -5.176eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.014eV (T=105K)  Etot = -5.176eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.014eV (T=108K)  Etot = -5.176eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.015eV (T=114K)  Etot = -5.175eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.015eV (T=119K)  Etot = -5.175eV
+Energy per atom: Epot = -5.191eV  Ekin = 0.015eV (T=119K)  Etot = -5.175eV
+Energy per atom: Epot = -5.191eV  Ekin = 0.016eV (T=121K)  Etot = -5.176eV
+Energy per atom: Epot = -5.192eV  Ekin = 0.016eV (T=124K)  Etot = -5.176eV
+Energy per atom: Epot = -5.192eV  Ekin = 0.016eV (T=125K)  Etot = -5.176eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.016eV (T=127K)  Etot = -5.176eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.016eV (T=127K)  Etot = -5.176eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.017eV (T=129K)  Etot = -5.176eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.017eV (T=129K)  Etot = -5.177eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.016eV (T=127K)  Etot = -5.177eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.017eV (T=128K)  Etot = -5.177eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.017eV (T=128K)  Etot = -5.176eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.017eV (T=129K)  Etot = -5.176eV
+Energy per atom: Epot = -5.192eV  Ekin = 0.017eV (T=134K)  Etot = -5.175eV
+Energy per atom: Epot = -5.192eV  Ekin = 0.018eV (T=136K)  Etot = -5.175eV
+Energy per atom: Epot = -5.192eV  Ekin = 0.018eV (T=139K)  Etot = -5.174eV
+Energy per atom: Epot = -5.191eV  Ekin = 0.018eV (T=139K)  Etot = -5.174eV
+Energy per atom: Epot = -5.191eV  Ekin = 0.018eV (T=139K)  Etot = -5.173eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.018eV (T=141K)  Etot = -5.172eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.018eV (T=139K)  Etot = -5.171eV
+Energy per atom: Epot = -5.189eV  Ekin = 0.018eV (T=140K)  Etot = -5.171eV
+Energy per atom: Epot = -5.188eV  Ekin = 0.018eV (T=140K)  Etot = -5.170eV
+Energy per atom: Epot = -5.187eV  Ekin = 0.018eV (T=137K)  Etot = -5.169eV
+Energy per atom: Epot = -5.186eV  Ekin = 0.017eV (T=134K)  Etot = -5.168eV
+Energy per atom: Epot = -5.185eV  Ekin = 0.017eV (T=131K)  Etot = -5.168eV
+Energy per atom: Epot = -5.185eV  Ekin = 0.017eV (T=130K)  Etot = -5.168eV
+Energy per atom: Epot = -5.185eV  Ekin = 0.017eV (T=129K)  Etot = -5.168eV
+Energy per atom: Epot = -5.185eV  Ekin = 0.016eV (T=127K)  Etot = -5.168eV
+Energy per atom: Epot = -5.186eV  Ekin = 0.017eV (T=129K)  Etot = -5.169eV
+Energy per atom: Epot = -5.186eV  Ekin = 0.017eV (T=130K)  Etot = -5.170eV
+Energy per atom: Epot = -5.187eV  Ekin = 0.017eV (T=131K)  Etot = -5.170eV
+Energy per atom: Epot = -5.189eV  Ekin = 0.017eV (T=134K)  Etot = -5.171eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.017eV (T=135K)  Etot = -5.172eV
+Energy per atom: Epot = -5.191eV  Ekin = 0.018eV (T=137K)  Etot = -5.173eV
+Energy per atom: Epot = -5.192eV  Ekin = 0.018eV (T=141K)  Etot = -5.173eV
+Energy per atom: Epot = -5.192eV  Ekin = 0.019eV (T=145K)  Etot = -5.173eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.019eV (T=146K)  Etot = -5.174eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.019eV (T=147K)  Etot = -5.174eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.019eV (T=145K)  Etot = -5.174eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.019eV (T=147K)  Etot = -5.174eV
+Energy per atom: Epot = -5.193eV  Ekin = 0.019eV (T=148K)  Etot = -5.173eV
+Energy per atom: Epot = -5.192eV  Ekin = 0.019eV (T=150K)  Etot = -5.173eV
+Energy per atom: Epot = -5.192eV  Ekin = 0.020eV (T=152K)  Etot = -5.172eV
+Energy per atom: Epot = -5.191eV  Ekin = 0.020eV (T=154K)  Etot = -5.171eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.020eV (T=157K)  Etot = -5.170eV
+Energy per atom: Epot = -5.190eV  Ekin = 0.021eV (T=160K)  Etot = -5.169eV
+Energy per atom: Epot = -5.188eV  Ekin = 0.021eV (T=161K)  Etot = -5.168eV
+Energy per atom: Epot = -5.187eV  Ekin = 0.021eV (T=160K)  Etot = -5.167eV
+Energy per atom: Epot = -5.186eV  Ekin = 0.020eV (T=156K)  Etot = -5.166eV
+Energy per atom: Epot = -5.184eV  Ekin = 0.020eV (T=154K)  Etot = -5.164eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.019eV (T=150K)  Etot = -5.164eV
+Energy per atom: Epot = -5.182eV  Ekin = 0.019eV (T=147K)  Etot = -5.163eV
+Energy per atom: Epot = -5.181eV  Ekin = 0.019eV (T=144K)  Etot = -5.163eV
+Energy per atom: Epot = -5.181eV  Ekin = 0.019eV (T=146K)  Etot = -5.162eV
+Energy per atom: Epot = -5.182eV  Ekin = 0.019eV (T=149K)  Etot = -5.162eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.020eV (T=158K)  Etot = -5.162eV
+Energy per atom: Epot = -5.184eV  Ekin = 0.021eV (T=163K)  Etot = -5.163eV
+Energy per atom: Epot = -5.185eV  Ekin = 0.022eV (T=169K)  Etot = -5.163eV
+Energy per atom: Epot = -5.187eV  Ekin = 0.023eV (T=176K)  Etot = -5.164eV
+Energy per atom: Epot = -5.188eV  Ekin = 0.024eV (T=182K)  Etot = -5.165eV
+Energy per atom: Epot = -5.189eV  Ekin = 0.024eV (T=184K)  Etot = -5.165eV
+Energy per atom: Epot = -5.189eV  Ekin = 0.023eV (T=179K)  Etot = -5.166eV
+Energy per atom: Epot = -5.189eV  Ekin = 0.022eV (T=173K)  Etot = -5.167eV
+Energy per atom: Epot = -5.189eV  Ekin = 0.021eV (T=166K)  Etot = -5.167eV
+Energy per atom: Epot = -5.188eV  Ekin = 0.020eV (T=158K)  Etot = -5.168eV
+Energy per atom: Epot = -5.187eV  Ekin = 0.020eV (T=154K)  Etot = -5.168eV
+Energy per atom: Epot = -5.187eV  Ekin = 0.019eV (T=150K)  Etot = -5.167eV
+Energy per atom: Epot = -5.186eV  Ekin = 0.019eV (T=147K)  Etot = -5.167eV
+Energy per atom: Epot = -5.185eV  Ekin = 0.019eV (T=147K)  Etot = -5.166eV
+Energy per atom: Epot = -5.185eV  Ekin = 0.019eV (T=149K)  Etot = -5.165eV
+Energy per atom: Epot = -5.184eV  Ekin = 0.020eV (T=152K)  Etot = -5.165eV
+Energy per atom: Epot = -5.184eV  Ekin = 0.020eV (T=157K)  Etot = -5.164eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.021eV (T=159K)  Etot = -5.163eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.021eV (T=162K)  Etot = -5.162eV
+Energy per atom: Epot = -5.182eV  Ekin = 0.021eV (T=164K)  Etot = -5.161eV
+Energy per atom: Epot = -5.182eV  Ekin = 0.022eV (T=167K)  Etot = -5.161eV
+Energy per atom: Epot = -5.182eV  Ekin = 0.022eV (T=168K)  Etot = -5.161eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.022eV (T=171K)  Etot = -5.161eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.023eV (T=175K)  Etot = -5.161eV
+Energy per atom: Epot = -5.184eV  Ekin = 0.023eV (T=181K)  Etot = -5.161eV
+Energy per atom: Epot = -5.185eV  Ekin = 0.024eV (T=189K)  Etot = -5.161eV
+Energy per atom: Epot = -5.186eV  Ekin = 0.025eV (T=193K)  Etot = -5.161eV
+Energy per atom: Epot = -5.187eV  Ekin = 0.025eV (T=195K)  Etot = -5.162eV
+Energy per atom: Epot = -5.188eV  Ekin = 0.025eV (T=195K)  Etot = -5.162eV
+Energy per atom: Epot = -5.188eV  Ekin = 0.025eV (T=194K)  Etot = -5.163eV
+Energy per atom: Epot = -5.187eV  Ekin = 0.024eV (T=187K)  Etot = -5.163eV
+Energy per atom: Epot = -5.186eV  Ekin = 0.023eV (T=176K)  Etot = -5.164eV
+Energy per atom: Epot = -5.185eV  Ekin = 0.022eV (T=168K)  Etot = -5.163eV
+Energy per atom: Epot = -5.184eV  Ekin = 0.021eV (T=160K)  Etot = -5.163eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.020eV (T=154K)  Etot = -5.163eV
+Energy per atom: Epot = -5.182eV  Ekin = 0.020eV (T=151K)  Etot = -5.163eV
+Energy per atom: Epot = -5.182eV  Ekin = 0.020eV (T=154K)  Etot = -5.162eV
+Energy per atom: Epot = -5.182eV  Ekin = 0.021eV (T=161K)  Etot = -5.161eV
+Energy per atom: Epot = -5.182eV  Ekin = 0.022eV (T=169K)  Etot = -5.161eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.023eV (T=178K)  Etot = -5.160eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.024eV (T=188K)  Etot = -5.159eV
+Energy per atom: Epot = -5.184eV  Ekin = 0.025eV (T=196K)  Etot = -5.158eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.026eV (T=200K)  Etot = -5.158eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.026eV (T=203K)  Etot = -5.157eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.026eV (T=203K)  Etot = -5.156eV
+Energy per atom: Epot = -5.182eV  Ekin = 0.026eV (T=203K)  Etot = -5.156eV
+Energy per atom: Epot = -5.181eV  Ekin = 0.026eV (T=201K)  Etot = -5.155eV
+Energy per atom: Epot = -5.180eV  Ekin = 0.026eV (T=199K)  Etot = -5.154eV
+Energy per atom: Epot = -5.180eV  Ekin = 0.026eV (T=201K)  Etot = -5.154eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.026eV (T=200K)  Etot = -5.153eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.026eV (T=201K)  Etot = -5.153eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.026eV (T=201K)  Etot = -5.153eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.026eV (T=200K)  Etot = -5.153eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.026eV (T=201K)  Etot = -5.153eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.026eV (T=199K)  Etot = -5.153eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.026eV (T=198K)  Etot = -5.153eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.025eV (T=195K)  Etot = -5.154eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.025eV (T=192K)  Etot = -5.154eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.024eV (T=187K)  Etot = -5.154eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.024eV (T=182K)  Etot = -5.155eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.023eV (T=179K)  Etot = -5.155eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.023eV (T=178K)  Etot = -5.155eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.023eV (T=179K)  Etot = -5.156eV
+Energy per atom: Epot = -5.180eV  Ekin = 0.023eV (T=181K)  Etot = -5.156eV
+Energy per atom: Epot = -5.180eV  Ekin = 0.024eV (T=184K)  Etot = -5.157eV
+Energy per atom: Epot = -5.181eV  Ekin = 0.025eV (T=191K)  Etot = -5.157eV
+Energy per atom: Epot = -5.182eV  Ekin = 0.026eV (T=200K)  Etot = -5.156eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.027eV (T=208K)  Etot = -5.156eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.027eV (T=210K)  Etot = -5.156eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.027eV (T=212K)  Etot = -5.156eV
+Energy per atom: Epot = -5.183eV  Ekin = 0.027eV (T=208K)  Etot = -5.156eV
+Energy per atom: Epot = -5.182eV  Ekin = 0.027eV (T=209K)  Etot = -5.155eV
+Energy per atom: Epot = -5.180eV  Ekin = 0.026eV (T=204K)  Etot = -5.154eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.026eV (T=198K)  Etot = -5.154eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.025eV (T=192K)  Etot = -5.153eV
+Energy per atom: Epot = -5.177eV  Ekin = 0.024eV (T=188K)  Etot = -5.153eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.024eV (T=188K)  Etot = -5.152eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.025eV (T=193K)  Etot = -5.151eV
+Energy per atom: Epot = -5.177eV  Ekin = 0.026eV (T=199K)  Etot = -5.151eV
+Energy per atom: Epot = -5.177eV  Ekin = 0.026eV (T=202K)  Etot = -5.151eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.027eV (T=207K)  Etot = -5.151eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.028eV (T=213K)  Etot = -5.151eV
+Energy per atom: Epot = -5.180eV  Ekin = 0.029eV (T=221K)  Etot = -5.151eV
+Energy per atom: Epot = -5.180eV  Ekin = 0.029eV (T=225K)  Etot = -5.151eV
+Energy per atom: Epot = -5.181eV  Ekin = 0.029eV (T=224K)  Etot = -5.152eV
+Energy per atom: Epot = -5.181eV  Ekin = 0.029eV (T=223K)  Etot = -5.152eV
+Energy per atom: Epot = -5.180eV  Ekin = 0.028eV (T=218K)  Etot = -5.152eV
+Energy per atom: Epot = -5.180eV  Ekin = 0.028eV (T=213K)  Etot = -5.153eV
+Energy per atom: Epot = -5.180eV  Ekin = 0.027eV (T=209K)  Etot = -5.153eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.027eV (T=205K)  Etot = -5.153eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.026eV (T=204K)  Etot = -5.153eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.026eV (T=202K)  Etot = -5.153eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.026eV (T=199K)  Etot = -5.153eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.026eV (T=201K)  Etot = -5.152eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.026eV (T=202K)  Etot = -5.152eV
+Energy per atom: Epot = -5.177eV  Ekin = 0.026eV (T=203K)  Etot = -5.151eV
+Energy per atom: Epot = -5.177eV  Ekin = 0.027eV (T=206K)  Etot = -5.150eV
+Energy per atom: Epot = -5.177eV  Ekin = 0.027eV (T=207K)  Etot = -5.150eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.027eV (T=206K)  Etot = -5.150eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.027eV (T=209K)  Etot = -5.149eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.028eV (T=214K)  Etot = -5.148eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.028eV (T=215K)  Etot = -5.147eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.028eV (T=214K)  Etot = -5.147eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.028eV (T=219K)  Etot = -5.146eV
+Energy per atom: Epot = -5.174eV  Ekin = 0.029eV (T=223K)  Etot = -5.146eV
+Energy per atom: Epot = -5.174eV  Ekin = 0.029eV (T=227K)  Etot = -5.145eV
+Energy per atom: Epot = -5.174eV  Ekin = 0.029eV (T=228K)  Etot = -5.145eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.030eV (T=233K)  Etot = -5.144eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.030eV (T=230K)  Etot = -5.145eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.029eV (T=228K)  Etot = -5.145eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.030eV (T=231K)  Etot = -5.145eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.029eV (T=228K)  Etot = -5.146eV
+Energy per atom: Epot = -5.177eV  Ekin = 0.029eV (T=228K)  Etot = -5.147eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.029eV (T=227K)  Etot = -5.148eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.029eV (T=222K)  Etot = -5.150eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.029eV (T=221K)  Etot = -5.151eV
+Energy per atom: Epot = -5.180eV  Ekin = 0.029eV (T=221K)  Etot = -5.151eV
+Energy per atom: Epot = -5.180eV  Ekin = 0.028eV (T=219K)  Etot = -5.152eV
+Energy per atom: Epot = -5.180eV  Ekin = 0.029eV (T=221K)  Etot = -5.151eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.028eV (T=219K)  Etot = -5.151eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.028eV (T=217K)  Etot = -5.151eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.028eV (T=218K)  Etot = -5.150eV
+Energy per atom: Epot = -5.177eV  Ekin = 0.028eV (T=217K)  Etot = -5.149eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.028eV (T=217K)  Etot = -5.148eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.028eV (T=217K)  Etot = -5.148eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.028eV (T=219K)  Etot = -5.147eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.029eV (T=222K)  Etot = -5.146eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.030eV (T=228K)  Etot = -5.145eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.030eV (T=232K)  Etot = -5.145eV
+Energy per atom: Epot = -5.174eV  Ekin = 0.031eV (T=239K)  Etot = -5.143eV
+Energy per atom: Epot = -5.174eV  Ekin = 0.031eV (T=240K)  Etot = -5.143eV
+Energy per atom: Epot = -5.174eV  Ekin = 0.031eV (T=240K)  Etot = -5.143eV
+Energy per atom: Epot = -5.173eV  Ekin = 0.031eV (T=241K)  Etot = -5.142eV
+Energy per atom: Epot = -5.172eV  Ekin = 0.031eV (T=239K)  Etot = -5.142eV
+Energy per atom: Epot = -5.172eV  Ekin = 0.030eV (T=232K)  Etot = -5.142eV
+Energy per atom: Epot = -5.171eV  Ekin = 0.030eV (T=229K)  Etot = -5.141eV
+Energy per atom: Epot = -5.171eV  Ekin = 0.030eV (T=229K)  Etot = -5.141eV
+Energy per atom: Epot = -5.170eV  Ekin = 0.030eV (T=231K)  Etot = -5.140eV
+Energy per atom: Epot = -5.170eV  Ekin = 0.029eV (T=228K)  Etot = -5.141eV
+Energy per atom: Epot = -5.171eV  Ekin = 0.029eV (T=223K)  Etot = -5.142eV
+Energy per atom: Epot = -5.171eV  Ekin = 0.029eV (T=222K)  Etot = -5.143eV
+Energy per atom: Epot = -5.172eV  Ekin = 0.029eV (T=225K)  Etot = -5.143eV
+Energy per atom: Epot = -5.174eV  Ekin = 0.030eV (T=231K)  Etot = -5.144eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.031eV (T=239K)  Etot = -5.144eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.031eV (T=241K)  Etot = -5.145eV
+Energy per atom: Epot = -5.177eV  Ekin = 0.032eV (T=245K)  Etot = -5.145eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.032eV (T=245K)  Etot = -5.146eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.031eV (T=243K)  Etot = -5.146eV
+Energy per atom: Epot = -5.177eV  Ekin = 0.031eV (T=242K)  Etot = -5.146eV
+Energy per atom: Epot = -5.177eV  Ekin = 0.031eV (T=242K)  Etot = -5.146eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.031eV (T=240K)  Etot = -5.145eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.031eV (T=239K)  Etot = -5.144eV
+Energy per atom: Epot = -5.174eV  Ekin = 0.030eV (T=236K)  Etot = -5.144eV
+Energy per atom: Epot = -5.174eV  Ekin = 0.030eV (T=234K)  Etot = -5.143eV
+Energy per atom: Epot = -5.173eV  Ekin = 0.031eV (T=237K)  Etot = -5.142eV
+Energy per atom: Epot = -5.173eV  Ekin = 0.031eV (T=238K)  Etot = -5.142eV
+Energy per atom: Epot = -5.172eV  Ekin = 0.031eV (T=243K)  Etot = -5.141eV
+Energy per atom: Epot = -5.172eV  Ekin = 0.032eV (T=244K)  Etot = -5.140eV
+Energy per atom: Epot = -5.171eV  Ekin = 0.031eV (T=243K)  Etot = -5.140eV
+Energy per atom: Epot = -5.171eV  Ekin = 0.031eV (T=243K)  Etot = -5.140eV
+Energy per atom: Epot = -5.171eV  Ekin = 0.031eV (T=242K)  Etot = -5.140eV
+Energy per atom: Epot = -5.171eV  Ekin = 0.030eV (T=236K)  Etot = -5.140eV
+Energy per atom: Epot = -5.171eV  Ekin = 0.030eV (T=232K)  Etot = -5.141eV
+Energy per atom: Epot = -5.171eV  Ekin = 0.030eV (T=229K)  Etot = -5.141eV
+Energy per atom: Epot = -5.172eV  Ekin = 0.030eV (T=231K)  Etot = -5.142eV
+Energy per atom: Epot = -5.173eV  Ekin = 0.030eV (T=232K)  Etot = -5.143eV
+Energy per atom: Epot = -5.174eV  Ekin = 0.030eV (T=236K)  Etot = -5.144eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.031eV (T=242K)  Etot = -5.144eV
+Energy per atom: Epot = -5.177eV  Ekin = 0.032eV (T=248K)  Etot = -5.145eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.033eV (T=252K)  Etot = -5.145eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.033eV (T=257K)  Etot = -5.146eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.033eV (T=258K)  Etot = -5.146eV
+Energy per atom: Epot = -5.179eV  Ekin = 0.033eV (T=258K)  Etot = -5.146eV
+Energy per atom: Epot = -5.178eV  Ekin = 0.033eV (T=254K)  Etot = -5.145eV
+Energy per atom: Epot = -5.177eV  Ekin = 0.033eV (T=253K)  Etot = -5.145eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.033eV (T=254K)  Etot = -5.143eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.032eV (T=250K)  Etot = -5.142eV
+Energy per atom: Epot = -5.173eV  Ekin = 0.031eV (T=243K)  Etot = -5.142eV
+Energy per atom: Epot = -5.171eV  Ekin = 0.031eV (T=239K)  Etot = -5.141eV
+Energy per atom: Epot = -5.170eV  Ekin = 0.031eV (T=239K)  Etot = -5.139eV
+Energy per atom: Epot = -5.169eV  Ekin = 0.031eV (T=238K)  Etot = -5.138eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.031eV (T=238K)  Etot = -5.137eV
+Energy per atom: Epot = -5.167eV  Ekin = 0.031eV (T=241K)  Etot = -5.136eV
+Energy per atom: Epot = -5.167eV  Ekin = 0.032eV (T=247K)  Etot = -5.135eV
+Energy per atom: Epot = -5.167eV  Ekin = 0.032eV (T=249K)  Etot = -5.135eV
+Energy per atom: Epot = -5.167eV  Ekin = 0.033eV (T=253K)  Etot = -5.134eV
+Energy per atom: Epot = -5.167eV  Ekin = 0.033eV (T=253K)  Etot = -5.134eV
+Energy per atom: Epot = -5.166eV  Ekin = 0.032eV (T=248K)  Etot = -5.134eV
+Energy per atom: Epot = -5.166eV  Ekin = 0.031eV (T=243K)  Etot = -5.135eV
+Energy per atom: Epot = -5.166eV  Ekin = 0.032eV (T=246K)  Etot = -5.134eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.031eV (T=240K)  Etot = -5.134eV
+Energy per atom: Epot = -5.166eV  Ekin = 0.031eV (T=237K)  Etot = -5.135eV
+Energy per atom: Epot = -5.166eV  Ekin = 0.031eV (T=241K)  Etot = -5.135eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.033eV (T=252K)  Etot = -5.135eV
+Energy per atom: Epot = -5.169eV  Ekin = 0.034eV (T=264K)  Etot = -5.135eV
+Energy per atom: Epot = -5.171eV  Ekin = 0.036eV (T=276K)  Etot = -5.136eV
+Energy per atom: Epot = -5.173eV  Ekin = 0.037eV (T=283K)  Etot = -5.137eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.037eV (T=288K)  Etot = -5.137eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.037eV (T=289K)  Etot = -5.138eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.037eV (T=290K)  Etot = -5.139eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.037eV (T=288K)  Etot = -5.139eV
+Energy per atom: Epot = -5.176eV  Ekin = 0.037eV (T=288K)  Etot = -5.139eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.037eV (T=283K)  Etot = -5.139eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.036eV (T=279K)  Etot = -5.139eV
+Energy per atom: Epot = -5.173eV  Ekin = 0.036eV (T=277K)  Etot = -5.137eV
+Energy per atom: Epot = -5.172eV  Ekin = 0.036eV (T=277K)  Etot = -5.136eV
+Energy per atom: Epot = -5.170eV  Ekin = 0.035eV (T=270K)  Etot = -5.135eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.034eV (T=265K)  Etot = -5.133eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.033eV (T=259K)  Etot = -5.132eV
+Energy per atom: Epot = -5.163eV  Ekin = 0.032eV (T=251K)  Etot = -5.131eV
+Energy per atom: Epot = -5.161eV  Ekin = 0.032eV (T=244K)  Etot = -5.130eV
+Energy per atom: Epot = -5.160eV  Ekin = 0.030eV (T=235K)  Etot = -5.130eV
+Energy per atom: Epot = -5.159eV  Ekin = 0.030eV (T=230K)  Etot = -5.129eV
+Energy per atom: Epot = -5.159eV  Ekin = 0.030eV (T=229K)  Etot = -5.129eV
+Energy per atom: Epot = -5.160eV  Ekin = 0.030eV (T=233K)  Etot = -5.130eV
+Energy per atom: Epot = -5.161eV  Ekin = 0.031eV (T=242K)  Etot = -5.130eV
+Energy per atom: Epot = -5.163eV  Ekin = 0.033eV (T=255K)  Etot = -5.130eV
+Energy per atom: Epot = -5.166eV  Ekin = 0.035eV (T=268K)  Etot = -5.131eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.036eV (T=282K)  Etot = -5.131eV
+Energy per atom: Epot = -5.170eV  Ekin = 0.038eV (T=296K)  Etot = -5.132eV
+Energy per atom: Epot = -5.172eV  Ekin = 0.040eV (T=307K)  Etot = -5.133eV
+Energy per atom: Epot = -5.174eV  Ekin = 0.041eV (T=316K)  Etot = -5.133eV
+Energy per atom: Epot = -5.175eV  Ekin = 0.041eV (T=315K)  Etot = -5.134eV
+Energy per atom: Epot = -5.174eV  Ekin = 0.040eV (T=311K)  Etot = -5.134eV
+Energy per atom: Epot = -5.173eV  Ekin = 0.039eV (T=306K)  Etot = -5.134eV
+Energy per atom: Epot = -5.172eV  Ekin = 0.038eV (T=294K)  Etot = -5.134eV
+Energy per atom: Epot = -5.170eV  Ekin = 0.036eV (T=281K)  Etot = -5.134eV
+Energy per atom: Epot = -5.169eV  Ekin = 0.035eV (T=272K)  Etot = -5.134eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.034eV (T=265K)  Etot = -5.134eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.034eV (T=261K)  Etot = -5.134eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.034eV (T=265K)  Etot = -5.134eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.036eV (T=275K)  Etot = -5.133eV
+Energy per atom: Epot = -5.169eV  Ekin = 0.037eV (T=284K)  Etot = -5.132eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.037eV (T=289K)  Etot = -5.131eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.038eV (T=291K)  Etot = -5.130eV
+Energy per atom: Epot = -5.167eV  Ekin = 0.037eV (T=287K)  Etot = -5.130eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.038eV (T=291K)  Etot = -5.127eV
+Energy per atom: Epot = -5.163eV  Ekin = 0.037eV (T=285K)  Etot = -5.126eV
+Energy per atom: Epot = -5.161eV  Ekin = 0.036eV (T=278K)  Etot = -5.125eV
+Energy per atom: Epot = -5.160eV  Ekin = 0.035eV (T=270K)  Etot = -5.125eV
+Energy per atom: Epot = -5.159eV  Ekin = 0.035eV (T=268K)  Etot = -5.125eV
+Energy per atom: Epot = -5.160eV  Ekin = 0.035eV (T=272K)  Etot = -5.125eV
+Energy per atom: Epot = -5.161eV  Ekin = 0.036eV (T=281K)  Etot = -5.125eV
+Energy per atom: Epot = -5.163eV  Ekin = 0.037eV (T=288K)  Etot = -5.126eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.038eV (T=298K)  Etot = -5.127eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.040eV (T=307K)  Etot = -5.128eV
+Energy per atom: Epot = -5.170eV  Ekin = 0.041eV (T=317K)  Etot = -5.129eV
+Energy per atom: Epot = -5.172eV  Ekin = 0.042eV (T=325K)  Etot = -5.130eV
+Energy per atom: Epot = -5.173eV  Ekin = 0.042eV (T=326K)  Etot = -5.131eV
+Energy per atom: Epot = -5.173eV  Ekin = 0.042eV (T=322K)  Etot = -5.131eV
+Energy per atom: Epot = -5.172eV  Ekin = 0.040eV (T=310K)  Etot = -5.132eV
+Energy per atom: Epot = -5.170eV  Ekin = 0.038eV (T=297K)  Etot = -5.132eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.037eV (T=283K)  Etot = -5.132eV
+Energy per atom: Epot = -5.167eV  Ekin = 0.035eV (T=273K)  Etot = -5.131eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.034eV (T=265K)  Etot = -5.131eV
+Energy per atom: Epot = -5.164eV  Ekin = 0.034eV (T=262K)  Etot = -5.130eV
+Energy per atom: Epot = -5.164eV  Ekin = 0.034eV (T=261K)  Etot = -5.130eV
+Energy per atom: Epot = -5.164eV  Ekin = 0.034eV (T=263K)  Etot = -5.130eV
+Energy per atom: Epot = -5.164eV  Ekin = 0.035eV (T=272K)  Etot = -5.129eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.036eV (T=278K)  Etot = -5.129eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.037eV (T=284K)  Etot = -5.128eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.037eV (T=289K)  Etot = -5.128eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.038eV (T=291K)  Etot = -5.128eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.038eV (T=295K)  Etot = -5.127eV
+Energy per atom: Epot = -5.164eV  Ekin = 0.038eV (T=293K)  Etot = -5.126eV
+Energy per atom: Epot = -5.163eV  Ekin = 0.037eV (T=286K)  Etot = -5.126eV
+Energy per atom: Epot = -5.162eV  Ekin = 0.036eV (T=280K)  Etot = -5.126eV
+Energy per atom: Epot = -5.162eV  Ekin = 0.036eV (T=280K)  Etot = -5.126eV
+Energy per atom: Epot = -5.162eV  Ekin = 0.036eV (T=281K)  Etot = -5.126eV
+Energy per atom: Epot = -5.163eV  Ekin = 0.037eV (T=287K)  Etot = -5.126eV
+Energy per atom: Epot = -5.164eV  Ekin = 0.038eV (T=295K)  Etot = -5.126eV
+Energy per atom: Epot = -5.166eV  Ekin = 0.040eV (T=306K)  Etot = -5.126eV
+Energy per atom: Epot = -5.167eV  Ekin = 0.042eV (T=322K)  Etot = -5.126eV
+Energy per atom: Epot = -5.169eV  Ekin = 0.043eV (T=332K)  Etot = -5.126eV
+Energy per atom: Epot = -5.169eV  Ekin = 0.044eV (T=340K)  Etot = -5.125eV
+Energy per atom: Epot = -5.169eV  Ekin = 0.044eV (T=337K)  Etot = -5.125eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.043eV (T=333K)  Etot = -5.125eV
+Energy per atom: Epot = -5.166eV  Ekin = 0.042eV (T=322K)  Etot = -5.125eV
+Energy per atom: Epot = -5.164eV  Ekin = 0.040eV (T=311K)  Etot = -5.124eV
+Energy per atom: Epot = -5.161eV  Ekin = 0.039eV (T=299K)  Etot = -5.123eV
+Energy per atom: Epot = -5.159eV  Ekin = 0.037eV (T=289K)  Etot = -5.122eV
+Energy per atom: Epot = -5.158eV  Ekin = 0.036eV (T=279K)  Etot = -5.122eV
+Energy per atom: Epot = -5.157eV  Ekin = 0.036eV (T=277K)  Etot = -5.122eV
+Energy per atom: Epot = -5.158eV  Ekin = 0.036eV (T=281K)  Etot = -5.121eV
+Energy per atom: Epot = -5.158eV  Ekin = 0.037eV (T=290K)  Etot = -5.121eV
+Energy per atom: Epot = -5.160eV  Ekin = 0.039eV (T=302K)  Etot = -5.121eV
+Energy per atom: Epot = -5.161eV  Ekin = 0.040eV (T=313K)  Etot = -5.120eV
+Energy per atom: Epot = -5.162eV  Ekin = 0.042eV (T=323K)  Etot = -5.120eV
+Energy per atom: Epot = -5.162eV  Ekin = 0.043eV (T=331K)  Etot = -5.120eV
+Energy per atom: Epot = -5.162eV  Ekin = 0.044eV (T=338K)  Etot = -5.119eV
+Energy per atom: Epot = -5.162eV  Ekin = 0.043eV (T=332K)  Etot = -5.119eV
+Energy per atom: Epot = -5.161eV  Ekin = 0.043eV (T=331K)  Etot = -5.118eV
+Energy per atom: Epot = -5.160eV  Ekin = 0.042eV (T=326K)  Etot = -5.118eV
+Energy per atom: Epot = -5.159eV  Ekin = 0.041eV (T=321K)  Etot = -5.118eV
+Energy per atom: Epot = -5.158eV  Ekin = 0.041eV (T=315K)  Etot = -5.117eV
+Energy per atom: Epot = -5.158eV  Ekin = 0.041eV (T=316K)  Etot = -5.117eV
+Energy per atom: Epot = -5.158eV  Ekin = 0.041eV (T=317K)  Etot = -5.117eV
+Energy per atom: Epot = -5.158eV  Ekin = 0.041eV (T=320K)  Etot = -5.117eV
+Energy per atom: Epot = -5.160eV  Ekin = 0.042eV (T=328K)  Etot = -5.117eV
+Energy per atom: Epot = -5.161eV  Ekin = 0.044eV (T=339K)  Etot = -5.118eV
+Energy per atom: Epot = -5.163eV  Ekin = 0.045eV (T=350K)  Etot = -5.118eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.046eV (T=357K)  Etot = -5.119eV
+Energy per atom: Epot = -5.167eV  Ekin = 0.046eV (T=360K)  Etot = -5.120eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.047eV (T=363K)  Etot = -5.121eV
+Energy per atom: Epot = -5.168eV  Ekin = 0.046eV (T=357K)  Etot = -5.122eV
+Energy per atom: Epot = -5.167eV  Ekin = 0.045eV (T=350K)  Etot = -5.122eV
+Energy per atom: Epot = -5.166eV  Ekin = 0.044eV (T=342K)  Etot = -5.122eV
+Energy per atom: Epot = -5.164eV  Ekin = 0.042eV (T=327K)  Etot = -5.122eV
+Energy per atom: Epot = -5.162eV  Ekin = 0.040eV (T=310K)  Etot = -5.122eV
+Energy per atom: Epot = -5.160eV  Ekin = 0.039eV (T=298K)  Etot = -5.122eV
+Energy per atom: Epot = -5.159eV  Ekin = 0.038eV (T=295K)  Etot = -5.121eV
+Energy per atom: Epot = -5.158eV  Ekin = 0.038eV (T=292K)  Etot = -5.120eV
+Energy per atom: Epot = -5.157eV  Ekin = 0.038eV (T=294K)  Etot = -5.119eV
+Energy per atom: Epot = -5.156eV  Ekin = 0.039eV (T=302K)  Etot = -5.117eV
+Energy per atom: Epot = -5.156eV  Ekin = 0.040eV (T=311K)  Etot = -5.116eV
+Energy per atom: Epot = -5.156eV  Ekin = 0.042eV (T=321K)  Etot = -5.115eV
+Energy per atom: Epot = -5.156eV  Ekin = 0.043eV (T=329K)  Etot = -5.114eV
+Energy per atom: Epot = -5.157eV  Ekin = 0.043eV (T=336K)  Etot = -5.113eV
+Energy per atom: Epot = -5.157eV  Ekin = 0.044eV (T=338K)  Etot = -5.113eV
+Energy per atom: Epot = -5.156eV  Ekin = 0.044eV (T=342K)  Etot = -5.112eV
+Energy per atom: Epot = -5.156eV  Ekin = 0.045eV (T=345K)  Etot = -5.111eV
+Energy per atom: Epot = -5.155eV  Ekin = 0.044eV (T=339K)  Etot = -5.111eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.043eV (T=332K)  Etot = -5.110eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.042eV (T=325K)  Etot = -5.110eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.041eV (T=313K)  Etot = -5.110eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.040eV (T=307K)  Etot = -5.110eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.039eV (T=302K)  Etot = -5.110eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.039eV (T=303K)  Etot = -5.111eV
+Energy per atom: Epot = -5.151eV  Ekin = 0.040eV (T=308K)  Etot = -5.112eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.041eV (T=320K)  Etot = -5.112eV
+Energy per atom: Epot = -5.156eV  Ekin = 0.043eV (T=332K)  Etot = -5.113eV
+Energy per atom: Epot = -5.159eV  Ekin = 0.045eV (T=346K)  Etot = -5.115eV
+Energy per atom: Epot = -5.162eV  Ekin = 0.047eV (T=361K)  Etot = -5.115eV
+Energy per atom: Epot = -5.164eV  Ekin = 0.048eV (T=370K)  Etot = -5.116eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.049eV (T=377K)  Etot = -5.116eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.048eV (T=375K)  Etot = -5.117eV
+Energy per atom: Epot = -5.164eV  Ekin = 0.048eV (T=368K)  Etot = -5.117eV
+Energy per atom: Epot = -5.163eV  Ekin = 0.046eV (T=356K)  Etot = -5.117eV
+Energy per atom: Epot = -5.160eV  Ekin = 0.045eV (T=348K)  Etot = -5.115eV
+Energy per atom: Epot = -5.158eV  Ekin = 0.044eV (T=337K)  Etot = -5.114eV
+Energy per atom: Epot = -5.156eV  Ekin = 0.042eV (T=326K)  Etot = -5.114eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.042eV (T=324K)  Etot = -5.112eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.042eV (T=325K)  Etot = -5.111eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.042eV (T=326K)  Etot = -5.111eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.043eV (T=334K)  Etot = -5.111eV
+Energy per atom: Epot = -5.155eV  Ekin = 0.045eV (T=350K)  Etot = -5.110eV
+Energy per atom: Epot = -5.157eV  Ekin = 0.046eV (T=358K)  Etot = -5.111eV
+Energy per atom: Epot = -5.159eV  Ekin = 0.048eV (T=368K)  Etot = -5.111eV
+Energy per atom: Epot = -5.160eV  Ekin = 0.048eV (T=373K)  Etot = -5.112eV
+Energy per atom: Epot = -5.162eV  Ekin = 0.049eV (T=378K)  Etot = -5.113eV
+Energy per atom: Epot = -5.163eV  Ekin = 0.049eV (T=381K)  Etot = -5.114eV
+Energy per atom: Epot = -5.164eV  Ekin = 0.049eV (T=383K)  Etot = -5.115eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.049eV (T=381K)  Etot = -5.115eV
+Energy per atom: Epot = -5.165eV  Ekin = 0.049eV (T=379K)  Etot = -5.116eV
+Energy per atom: Epot = -5.164eV  Ekin = 0.049eV (T=375K)  Etot = -5.116eV
+Energy per atom: Epot = -5.164eV  Ekin = 0.048eV (T=373K)  Etot = -5.115eV
+Energy per atom: Epot = -5.163eV  Ekin = 0.047eV (T=362K)  Etot = -5.116eV
+Energy per atom: Epot = -5.161eV  Ekin = 0.046eV (T=357K)  Etot = -5.115eV
+Energy per atom: Epot = -5.160eV  Ekin = 0.045eV (T=349K)  Etot = -5.115eV
+Energy per atom: Epot = -5.159eV  Ekin = 0.045eV (T=345K)  Etot = -5.114eV
+Energy per atom: Epot = -5.157eV  Ekin = 0.044eV (T=342K)  Etot = -5.113eV
+Energy per atom: Epot = -5.156eV  Ekin = 0.044eV (T=344K)  Etot = -5.112eV
+Energy per atom: Epot = -5.155eV  Ekin = 0.044eV (T=340K)  Etot = -5.111eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.044eV (T=338K)  Etot = -5.110eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.044eV (T=340K)  Etot = -5.109eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.044eV (T=341K)  Etot = -5.108eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.044eV (T=342K)  Etot = -5.108eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.045eV (T=346K)  Etot = -5.107eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.045eV (T=350K)  Etot = -5.107eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.046eV (T=360K)  Etot = -5.106eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.047eV (T=366K)  Etot = -5.105eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.048eV (T=373K)  Etot = -5.105eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.049eV (T=381K)  Etot = -5.104eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.050eV (T=386K)  Etot = -5.103eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.051eV (T=391K)  Etot = -5.102eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.050eV (T=390K)  Etot = -5.101eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.050eV (T=388K)  Etot = -5.100eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.049eV (T=378K)  Etot = -5.100eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.048eV (T=369K)  Etot = -5.100eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.047eV (T=360K)  Etot = -5.100eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.046eV (T=354K)  Etot = -5.100eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.045eV (T=352K)  Etot = -5.101eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.046eV (T=357K)  Etot = -5.101eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.047eV (T=364K)  Etot = -5.102eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.048eV (T=369K)  Etot = -5.103eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.047eV (T=366K)  Etot = -5.104eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.048eV (T=374K)  Etot = -5.105eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.048eV (T=372K)  Etot = -5.106eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.048eV (T=369K)  Etot = -5.107eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.048eV (T=370K)  Etot = -5.107eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.048eV (T=373K)  Etot = -5.106eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.049eV (T=376K)  Etot = -5.106eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.048eV (T=372K)  Etot = -5.106eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.048eV (T=375K)  Etot = -5.106eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.049eV (T=377K)  Etot = -5.105eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.049eV (T=376K)  Etot = -5.105eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.049eV (T=376K)  Etot = -5.105eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.050eV (T=385K)  Etot = -5.104eV
+Energy per atom: Epot = -5.155eV  Ekin = 0.051eV (T=394K)  Etot = -5.104eV
+Energy per atom: Epot = -5.156eV  Ekin = 0.052eV (T=402K)  Etot = -5.104eV
+Energy per atom: Epot = -5.157eV  Ekin = 0.053eV (T=408K)  Etot = -5.104eV
+Energy per atom: Epot = -5.157eV  Ekin = 0.053eV (T=411K)  Etot = -5.104eV
+Energy per atom: Epot = -5.157eV  Ekin = 0.053eV (T=412K)  Etot = -5.104eV
+Energy per atom: Epot = -5.156eV  Ekin = 0.054eV (T=415K)  Etot = -5.103eV
+Energy per atom: Epot = -5.155eV  Ekin = 0.053eV (T=408K)  Etot = -5.102eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.051eV (T=398K)  Etot = -5.102eV
+Energy per atom: Epot = -5.151eV  Ekin = 0.050eV (T=389K)  Etot = -5.101eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.048eV (T=374K)  Etot = -5.101eV
+Energy per atom: Epot = -5.148eV  Ekin = 0.048eV (T=370K)  Etot = -5.100eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.047eV (T=367K)  Etot = -5.100eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.048eV (T=374K)  Etot = -5.099eV
+Energy per atom: Epot = -5.148eV  Ekin = 0.049eV (T=380K)  Etot = -5.099eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.050eV (T=388K)  Etot = -5.099eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.051eV (T=395K)  Etot = -5.099eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.051eV (T=397K)  Etot = -5.100eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.052eV (T=402K)  Etot = -5.100eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.052eV (T=399K)  Etot = -5.101eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.051eV (T=394K)  Etot = -5.101eV
+Energy per atom: Epot = -5.151eV  Ekin = 0.050eV (T=388K)  Etot = -5.101eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.049eV (T=376K)  Etot = -5.101eV
+Energy per atom: Epot = -5.148eV  Ekin = 0.048eV (T=368K)  Etot = -5.101eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.048eV (T=368K)  Etot = -5.100eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.048eV (T=374K)  Etot = -5.099eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.049eV (T=381K)  Etot = -5.098eV
+Energy per atom: Epot = -5.148eV  Ekin = 0.050eV (T=389K)  Etot = -5.097eV
+Energy per atom: Epot = -5.148eV  Ekin = 0.052eV (T=401K)  Etot = -5.097eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.053eV (T=412K)  Etot = -5.096eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.054eV (T=421K)  Etot = -5.095eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.055eV (T=425K)  Etot = -5.094eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.055eV (T=423K)  Etot = -5.094eV
+Energy per atom: Epot = -5.148eV  Ekin = 0.055eV (T=423K)  Etot = -5.093eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.054eV (T=420K)  Etot = -5.093eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.053eV (T=412K)  Etot = -5.093eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.052eV (T=402K)  Etot = -5.094eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.050eV (T=389K)  Etot = -5.094eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.049eV (T=379K)  Etot = -5.095eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.048eV (T=370K)  Etot = -5.096eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.047eV (T=364K)  Etot = -5.098eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.047eV (T=366K)  Etot = -5.098eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.047eV (T=367K)  Etot = -5.099eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.047eV (T=367K)  Etot = -5.100eV
+Energy per atom: Epot = -5.148eV  Ekin = 0.048eV (T=371K)  Etot = -5.100eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.049eV (T=377K)  Etot = -5.100eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.049eV (T=380K)  Etot = -5.101eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.049eV (T=378K)  Etot = -5.101eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.050eV (T=385K)  Etot = -5.100eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.049eV (T=381K)  Etot = -5.101eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.050eV (T=383K)  Etot = -5.100eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.050eV (T=385K)  Etot = -5.100eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.050eV (T=389K)  Etot = -5.099eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.051eV (T=395K)  Etot = -5.099eV
+Energy per atom: Epot = -5.151eV  Ekin = 0.052eV (T=401K)  Etot = -5.099eV
+Energy per atom: Epot = -5.151eV  Ekin = 0.053eV (T=409K)  Etot = -5.098eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.054eV (T=416K)  Etot = -5.098eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.055eV (T=422K)  Etot = -5.098eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.055eV (T=427K)  Etot = -5.098eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.056eV (T=431K)  Etot = -5.097eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.055eV (T=425K)  Etot = -5.098eV
+Energy per atom: Epot = -5.151eV  Ekin = 0.053eV (T=410K)  Etot = -5.098eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.051eV (T=397K)  Etot = -5.098eV
+Energy per atom: Epot = -5.148eV  Ekin = 0.050eV (T=384K)  Etot = -5.098eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.049eV (T=377K)  Etot = -5.097eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.048eV (T=374K)  Etot = -5.097eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.048eV (T=374K)  Etot = -5.097eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.049eV (T=378K)  Etot = -5.097eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.050eV (T=388K)  Etot = -5.097eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.052eV (T=403K)  Etot = -5.097eV
+Energy per atom: Epot = -5.151eV  Ekin = 0.054eV (T=417K)  Etot = -5.097eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.055eV (T=428K)  Etot = -5.098eV
+Energy per atom: Epot = -5.155eV  Ekin = 0.056eV (T=436K)  Etot = -5.098eV
+Energy per atom: Epot = -5.156eV  Ekin = 0.057eV (T=441K)  Etot = -5.099eV
+Energy per atom: Epot = -5.156eV  Ekin = 0.058eV (T=448K)  Etot = -5.098eV
+Energy per atom: Epot = -5.155eV  Ekin = 0.057eV (T=441K)  Etot = -5.098eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.056eV (T=433K)  Etot = -5.097eV
+Energy per atom: Epot = -5.151eV  Ekin = 0.054eV (T=421K)  Etot = -5.097eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.052eV (T=405K)  Etot = -5.096eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.051eV (T=396K)  Etot = -5.095eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.051eV (T=393K)  Etot = -5.094eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.051eV (T=393K)  Etot = -5.094eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.051eV (T=396K)  Etot = -5.093eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.051eV (T=396K)  Etot = -5.093eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.052eV (T=400K)  Etot = -5.093eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.052eV (T=398K)  Etot = -5.093eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.051eV (T=396K)  Etot = -5.094eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.051eV (T=396K)  Etot = -5.094eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.051eV (T=391K)  Etot = -5.094eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.051eV (T=391K)  Etot = -5.094eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.050eV (T=390K)  Etot = -5.095eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.051eV (T=397K)  Etot = -5.096eV
+Energy per atom: Epot = -5.148eV  Ekin = 0.052eV (T=405K)  Etot = -5.096eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.054eV (T=417K)  Etot = -5.096eV
+Energy per atom: Epot = -5.151eV  Ekin = 0.055eV (T=424K)  Etot = -5.096eV
+Energy per atom: Epot = -5.151eV  Ekin = 0.056eV (T=430K)  Etot = -5.096eV
+Energy per atom: Epot = -5.151eV  Ekin = 0.056eV (T=435K)  Etot = -5.095eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.055eV (T=427K)  Etot = -5.095eV
+Energy per atom: Epot = -5.148eV  Ekin = 0.053eV (T=412K)  Etot = -5.095eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.052eV (T=405K)  Etot = -5.093eV
+Energy per atom: Epot = -5.143eV  Ekin = 0.050eV (T=390K)  Etot = -5.093eV
+Energy per atom: Epot = -5.141eV  Ekin = 0.049eV (T=375K)  Etot = -5.093eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.048eV (T=370K)  Etot = -5.092eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.049eV (T=377K)  Etot = -5.092eV
+Energy per atom: Epot = -5.142eV  Ekin = 0.050eV (T=389K)  Etot = -5.091eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.052eV (T=403K)  Etot = -5.092eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.055eV (T=425K)  Etot = -5.092eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.058eV (T=446K)  Etot = -5.092eV
+Energy per atom: Epot = -5.152eV  Ekin = 0.060eV (T=465K)  Etot = -5.092eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.062eV (T=479K)  Etot = -5.092eV
+Energy per atom: Epot = -5.154eV  Ekin = 0.062eV (T=478K)  Etot = -5.092eV
+Energy per atom: Epot = -5.153eV  Ekin = 0.061eV (T=473K)  Etot = -5.092eV
+Energy per atom: Epot = -5.151eV  Ekin = 0.059eV (T=460K)  Etot = -5.091eV
+Energy per atom: Epot = -5.148eV  Ekin = 0.057eV (T=442K)  Etot = -5.091eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.055eV (T=422K)  Etot = -5.090eV
+Energy per atom: Epot = -5.142eV  Ekin = 0.052eV (T=405K)  Etot = -5.090eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.050eV (T=390K)  Etot = -5.089eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.050eV (T=385K)  Etot = -5.088eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.050eV (T=384K)  Etot = -5.088eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.050eV (T=389K)  Etot = -5.088eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.052eV (T=400K)  Etot = -5.088eV
+Energy per atom: Epot = -5.142eV  Ekin = 0.053eV (T=414K)  Etot = -5.089eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.055eV (T=426K)  Etot = -5.089eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.057eV (T=441K)  Etot = -5.089eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.057eV (T=439K)  Etot = -5.091eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.056eV (T=432K)  Etot = -5.091eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.055eV (T=427K)  Etot = -5.091eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.054eV (T=415K)  Etot = -5.091eV
+Energy per atom: Epot = -5.143eV  Ekin = 0.052eV (T=403K)  Etot = -5.091eV
+Energy per atom: Epot = -5.141eV  Ekin = 0.050eV (T=388K)  Etot = -5.091eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.049eV (T=383K)  Etot = -5.090eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.050eV (T=387K)  Etot = -5.090eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.052eV (T=399K)  Etot = -5.089eV
+Energy per atom: Epot = -5.142eV  Ekin = 0.053eV (T=411K)  Etot = -5.089eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.055eV (T=424K)  Etot = -5.089eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.058eV (T=445K)  Etot = -5.089eV
+Energy per atom: Epot = -5.148eV  Ekin = 0.059eV (T=456K)  Etot = -5.089eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.061eV (T=469K)  Etot = -5.089eV
+Energy per atom: Epot = -5.150eV  Ekin = 0.061eV (T=472K)  Etot = -5.089eV
+Energy per atom: Epot = -5.149eV  Ekin = 0.061eV (T=469K)  Etot = -5.089eV
+Energy per atom: Epot = -5.148eV  Ekin = 0.059eV (T=455K)  Etot = -5.090eV
+Energy per atom: Epot = -5.147eV  Ekin = 0.058eV (T=450K)  Etot = -5.089eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.057eV (T=444K)  Etot = -5.089eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.058eV (T=446K)  Etot = -5.088eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.057eV (T=444K)  Etot = -5.088eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.058eV (T=446K)  Etot = -5.088eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.059eV (T=454K)  Etot = -5.087eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.059eV (T=457K)  Etot = -5.087eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.060eV (T=463K)  Etot = -5.086eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.059eV (T=455K)  Etot = -5.086eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.058eV (T=452K)  Etot = -5.085eV
+Energy per atom: Epot = -5.143eV  Ekin = 0.058eV (T=449K)  Etot = -5.085eV
+Energy per atom: Epot = -5.141eV  Ekin = 0.057eV (T=439K)  Etot = -5.085eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.056eV (T=437K)  Etot = -5.084eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.056eV (T=436K)  Etot = -5.083eV
+Energy per atom: Epot = -5.139eV  Ekin = 0.057eV (T=441K)  Etot = -5.082eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.058eV (T=449K)  Etot = -5.082eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.059eV (T=457K)  Etot = -5.081eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.060eV (T=463K)  Etot = -5.080eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.060eV (T=460K)  Etot = -5.080eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.059eV (T=456K)  Etot = -5.080eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.057eV (T=445K)  Etot = -5.079eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.056eV (T=433K)  Etot = -5.079eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.055eV (T=423K)  Etot = -5.079eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.053eV (T=410K)  Etot = -5.079eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.053eV (T=407K)  Etot = -5.079eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.053eV (T=409K)  Etot = -5.079eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.054eV (T=417K)  Etot = -5.080eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.055eV (T=429K)  Etot = -5.080eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.058eV (T=446K)  Etot = -5.080eV
+Energy per atom: Epot = -5.139eV  Ekin = 0.059eV (T=460K)  Etot = -5.079eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.061eV (T=471K)  Etot = -5.079eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.061eV (T=472K)  Etot = -5.079eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.061eV (T=469K)  Etot = -5.079eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.060eV (T=467K)  Etot = -5.079eV
+Energy per atom: Epot = -5.139eV  Ekin = 0.060eV (T=461K)  Etot = -5.080eV
+Energy per atom: Epot = -5.139eV  Ekin = 0.058eV (T=451K)  Etot = -5.081eV
+Energy per atom: Epot = -5.139eV  Ekin = 0.058eV (T=448K)  Etot = -5.082eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.058eV (T=452K)  Etot = -5.082eV
+Energy per atom: Epot = -5.142eV  Ekin = 0.059eV (T=460K)  Etot = -5.082eV
+Energy per atom: Epot = -5.143eV  Ekin = 0.060eV (T=465K)  Etot = -5.083eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.061eV (T=472K)  Etot = -5.083eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.061eV (T=475K)  Etot = -5.084eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.062eV (T=478K)  Etot = -5.084eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.062eV (T=480K)  Etot = -5.084eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.062eV (T=478K)  Etot = -5.084eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.061eV (T=475K)  Etot = -5.084eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.061eV (T=471K)  Etot = -5.083eV
+Energy per atom: Epot = -5.143eV  Ekin = 0.061eV (T=470K)  Etot = -5.082eV
+Energy per atom: Epot = -5.141eV  Ekin = 0.060eV (T=462K)  Etot = -5.081eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.059eV (T=457K)  Etot = -5.081eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.058eV (T=452K)  Etot = -5.080eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.058eV (T=449K)  Etot = -5.080eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.058eV (T=450K)  Etot = -5.079eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.058eV (T=452K)  Etot = -5.079eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.059eV (T=456K)  Etot = -5.079eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.059eV (T=459K)  Etot = -5.078eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.059eV (T=454K)  Etot = -5.079eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.057eV (T=443K)  Etot = -5.080eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.056eV (T=437K)  Etot = -5.080eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.056eV (T=434K)  Etot = -5.081eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.056eV (T=433K)  Etot = -5.081eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.057eV (T=438K)  Etot = -5.081eV
+Energy per atom: Epot = -5.139eV  Ekin = 0.058eV (T=445K)  Etot = -5.081eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.059eV (T=454K)  Etot = -5.082eV
+Energy per atom: Epot = -5.142eV  Ekin = 0.061eV (T=469K)  Etot = -5.082eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.062eV (T=482K)  Etot = -5.082eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.064eV (T=499K)  Etot = -5.081eV
+Energy per atom: Epot = -5.146eV  Ekin = 0.065eV (T=502K)  Etot = -5.081eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.065eV (T=506K)  Etot = -5.080eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.065eV (T=499K)  Etot = -5.080eV
+Energy per atom: Epot = -5.142eV  Ekin = 0.063eV (T=484K)  Etot = -5.079eV
+Energy per atom: Epot = -5.139eV  Ekin = 0.060eV (T=467K)  Etot = -5.079eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.058eV (T=451K)  Etot = -5.078eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.055eV (T=428K)  Etot = -5.078eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.054eV (T=418K)  Etot = -5.077eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.053eV (T=414K)  Etot = -5.077eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.054eV (T=420K)  Etot = -5.077eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.057eV (T=438K)  Etot = -5.077eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.060eV (T=463K)  Etot = -5.076eV
+Energy per atom: Epot = -5.139eV  Ekin = 0.062eV (T=481K)  Etot = -5.077eV
+Energy per atom: Epot = -5.142eV  Ekin = 0.065eV (T=503K)  Etot = -5.077eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.067eV (T=520K)  Etot = -5.077eV
+Energy per atom: Epot = -5.145eV  Ekin = 0.068eV (T=525K)  Etot = -5.077eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.068eV (T=523K)  Etot = -5.077eV
+Energy per atom: Epot = -5.143eV  Ekin = 0.065eV (T=507K)  Etot = -5.077eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.063eV (T=486K)  Etot = -5.078eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.060eV (T=468K)  Etot = -5.077eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.058eV (T=446K)  Etot = -5.078eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.055eV (T=429K)  Etot = -5.078eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.055eV (T=428K)  Etot = -5.078eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.056eV (T=430K)  Etot = -5.078eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.056eV (T=435K)  Etot = -5.078eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.058eV (T=446K)  Etot = -5.078eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.059eV (T=456K)  Etot = -5.077eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.060eV (T=468K)  Etot = -5.077eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.062eV (T=477K)  Etot = -5.076eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.063eV (T=486K)  Etot = -5.076eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.063eV (T=487K)  Etot = -5.075eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.063eV (T=488K)  Etot = -5.075eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.063eV (T=486K)  Etot = -5.075eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.063eV (T=490K)  Etot = -5.074eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.063eV (T=491K)  Etot = -5.074eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.064eV (T=492K)  Etot = -5.073eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.063eV (T=491K)  Etot = -5.073eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.062eV (T=481K)  Etot = -5.074eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.063eV (T=484K)  Etot = -5.074eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.062eV (T=480K)  Etot = -5.074eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.061eV (T=476K)  Etot = -5.074eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.061eV (T=470K)  Etot = -5.075eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.061eV (T=472K)  Etot = -5.075eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.061eV (T=472K)  Etot = -5.075eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.061eV (T=470K)  Etot = -5.075eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.061eV (T=472K)  Etot = -5.074eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.061eV (T=475K)  Etot = -5.074eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.062eV (T=476K)  Etot = -5.074eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.061eV (T=474K)  Etot = -5.074eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.062eV (T=481K)  Etot = -5.073eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.061eV (T=475K)  Etot = -5.073eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.061eV (T=471K)  Etot = -5.073eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.061eV (T=474K)  Etot = -5.073eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.061eV (T=470K)  Etot = -5.073eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.060eV (T=461K)  Etot = -5.073eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.060eV (T=462K)  Etot = -5.072eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.059eV (T=457K)  Etot = -5.073eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.060eV (T=461K)  Etot = -5.072eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.060eV (T=466K)  Etot = -5.072eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.061eV (T=472K)  Etot = -5.072eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.063eV (T=490K)  Etot = -5.071eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.065eV (T=503K)  Etot = -5.071eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.066eV (T=513K)  Etot = -5.071eV
+Energy per atom: Epot = -5.139eV  Ekin = 0.068eV (T=523K)  Etot = -5.071eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.068eV (T=528K)  Etot = -5.071eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.068eV (T=527K)  Etot = -5.072eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.068eV (T=526K)  Etot = -5.072eV
+Energy per atom: Epot = -5.139eV  Ekin = 0.067eV (T=521K)  Etot = -5.072eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.067eV (T=516K)  Etot = -5.071eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.066eV (T=512K)  Etot = -5.071eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.066eV (T=507K)  Etot = -5.071eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.065eV (T=505K)  Etot = -5.071eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.065eV (T=507K)  Etot = -5.071eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.066eV (T=512K)  Etot = -5.070eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.066eV (T=509K)  Etot = -5.071eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.066eV (T=507K)  Etot = -5.071eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.064eV (T=498K)  Etot = -5.071eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.063eV (T=486K)  Etot = -5.072eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.061eV (T=473K)  Etot = -5.073eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.060eV (T=464K)  Etot = -5.073eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.059eV (T=458K)  Etot = -5.072eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.058eV (T=451K)  Etot = -5.072eV
+Energy per atom: Epot = -5.130eV  Ekin = 0.057eV (T=443K)  Etot = -5.073eV
+Energy per atom: Epot = -5.129eV  Ekin = 0.058eV (T=446K)  Etot = -5.071eV
+Energy per atom: Epot = -5.128eV  Ekin = 0.058eV (T=447K)  Etot = -5.071eV
+Energy per atom: Epot = -5.128eV  Ekin = 0.058eV (T=446K)  Etot = -5.070eV
+Energy per atom: Epot = -5.127eV  Ekin = 0.057eV (T=442K)  Etot = -5.070eV
+Energy per atom: Epot = -5.126eV  Ekin = 0.057eV (T=442K)  Etot = -5.069eV
+Energy per atom: Epot = -5.125eV  Ekin = 0.057eV (T=440K)  Etot = -5.068eV
+Energy per atom: Epot = -5.125eV  Ekin = 0.057eV (T=442K)  Etot = -5.068eV
+Energy per atom: Epot = -5.125eV  Ekin = 0.058eV (T=450K)  Etot = -5.067eV
+Energy per atom: Epot = -5.127eV  Ekin = 0.059eV (T=459K)  Etot = -5.067eV
+Energy per atom: Epot = -5.129eV  Ekin = 0.062eV (T=477K)  Etot = -5.067eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.064eV (T=497K)  Etot = -5.067eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.067eV (T=520K)  Etot = -5.067eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.070eV (T=539K)  Etot = -5.067eV
+Energy per atom: Epot = -5.139eV  Ekin = 0.071eV (T=553K)  Etot = -5.068eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.072eV (T=555K)  Etot = -5.068eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.071eV (T=547K)  Etot = -5.069eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.069eV (T=531K)  Etot = -5.070eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.066eV (T=512K)  Etot = -5.070eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.064eV (T=495K)  Etot = -5.070eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.062eV (T=477K)  Etot = -5.071eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.060eV (T=468K)  Etot = -5.071eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.059eV (T=460K)  Etot = -5.072eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.060eV (T=463K)  Etot = -5.072eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.061eV (T=474K)  Etot = -5.072eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.063eV (T=487K)  Etot = -5.071eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.064eV (T=495K)  Etot = -5.071eV
+Energy per atom: Epot = -5.136eV  Ekin = 0.064eV (T=499K)  Etot = -5.072eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.066eV (T=508K)  Etot = -5.071eV
+Energy per atom: Epot = -5.138eV  Ekin = 0.066eV (T=511K)  Etot = -5.072eV
+Energy per atom: Epot = -5.139eV  Ekin = 0.067eV (T=518K)  Etot = -5.072eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.068eV (T=527K)  Etot = -5.072eV
+Energy per atom: Epot = -5.142eV  Ekin = 0.069eV (T=535K)  Etot = -5.073eV
+Energy per atom: Epot = -5.143eV  Ekin = 0.070eV (T=542K)  Etot = -5.073eV
+Energy per atom: Epot = -5.144eV  Ekin = 0.071eV (T=549K)  Etot = -5.073eV
+Energy per atom: Epot = -5.143eV  Ekin = 0.071eV (T=550K)  Etot = -5.072eV
+Energy per atom: Epot = -5.142eV  Ekin = 0.070eV (T=542K)  Etot = -5.072eV
+Energy per atom: Epot = -5.140eV  Ekin = 0.068eV (T=524K)  Etot = -5.072eV
+Energy per atom: Epot = -5.137eV  Ekin = 0.066eV (T=509K)  Etot = -5.071eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.063eV (T=490K)  Etot = -5.070eV
+Energy per atom: Epot = -5.130eV  Ekin = 0.061eV (T=475K)  Etot = -5.069eV
+Energy per atom: Epot = -5.128eV  Ekin = 0.060eV (T=466K)  Etot = -5.068eV
+Energy per atom: Epot = -5.127eV  Ekin = 0.060eV (T=463K)  Etot = -5.068eV
+Energy per atom: Epot = -5.128eV  Ekin = 0.060eV (T=468K)  Etot = -5.067eV
+Energy per atom: Epot = -5.129eV  Ekin = 0.063eV (T=486K)  Etot = -5.067eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.065eV (T=502K)  Etot = -5.066eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.067eV (T=515K)  Etot = -5.066eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.067eV (T=520K)  Etot = -5.066eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.067eV (T=520K)  Etot = -5.066eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.067eV (T=517K)  Etot = -5.065eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.066eV (T=510K)  Etot = -5.066eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.065eV (T=501K)  Etot = -5.066eV
+Energy per atom: Epot = -5.130eV  Ekin = 0.064eV (T=498K)  Etot = -5.066eV
+Energy per atom: Epot = -5.130eV  Ekin = 0.064eV (T=492K)  Etot = -5.067eV
+Energy per atom: Epot = -5.130eV  Ekin = 0.063eV (T=490K)  Etot = -5.067eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.063eV (T=491K)  Etot = -5.067eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.064eV (T=497K)  Etot = -5.067eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.065eV (T=503K)  Etot = -5.067eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.066eV (T=512K)  Etot = -5.067eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.067eV (T=517K)  Etot = -5.067eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.068eV (T=526K)  Etot = -5.066eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.069eV (T=531K)  Etot = -5.066eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.068eV (T=529K)  Etot = -5.066eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.068eV (T=526K)  Etot = -5.066eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.068eV (T=525K)  Etot = -5.066eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.067eV (T=517K)  Etot = -5.066eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.066eV (T=509K)  Etot = -5.066eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.064eV (T=498K)  Etot = -5.066eV
+Energy per atom: Epot = -5.130eV  Ekin = 0.064eV (T=498K)  Etot = -5.065eV
+Energy per atom: Epot = -5.128eV  Ekin = 0.064eV (T=494K)  Etot = -5.065eV
+Energy per atom: Epot = -5.127eV  Ekin = 0.063eV (T=488K)  Etot = -5.064eV
+Energy per atom: Epot = -5.127eV  Ekin = 0.063eV (T=485K)  Etot = -5.064eV
+Energy per atom: Epot = -5.126eV  Ekin = 0.063eV (T=486K)  Etot = -5.064eV
+Energy per atom: Epot = -5.126eV  Ekin = 0.062eV (T=484K)  Etot = -5.064eV
+Energy per atom: Epot = -5.127eV  Ekin = 0.063eV (T=486K)  Etot = -5.064eV
+Energy per atom: Epot = -5.128eV  Ekin = 0.064eV (T=493K)  Etot = -5.064eV
+Energy per atom: Epot = -5.129eV  Ekin = 0.064eV (T=499K)  Etot = -5.064eV
+Energy per atom: Epot = -5.130eV  Ekin = 0.066eV (T=507K)  Etot = -5.064eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.067eV (T=516K)  Etot = -5.065eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.067eV (T=522K)  Etot = -5.065eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.067eV (T=519K)  Etot = -5.066eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.067eV (T=519K)  Etot = -5.066eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.067eV (T=518K)  Etot = -5.066eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.066eV (T=511K)  Etot = -5.066eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.065eV (T=504K)  Etot = -5.066eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.065eV (T=502K)  Etot = -5.066eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.065eV (T=503K)  Etot = -5.066eV
+Energy per atom: Epot = -5.131eV  Ekin = 0.067eV (T=516K)  Etot = -5.065eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.068eV (T=523K)  Etot = -5.064eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.069eV (T=534K)  Etot = -5.064eV
+Energy per atom: Epot = -5.133eV  Ekin = 0.070eV (T=539K)  Etot = -5.064eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.070eV (T=538K)  Etot = -5.064eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.069eV (T=537K)  Etot = -5.064eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.069eV (T=533K)  Etot = -5.065eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.068eV (T=528K)  Etot = -5.066eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.068eV (T=527K)  Etot = -5.066eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.069eV (T=531K)  Etot = -5.067eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.069eV (T=532K)  Etot = -5.067eV
+Energy per atom: Epot = -5.135eV  Ekin = 0.069eV (T=531K)  Etot = -5.066eV
+Energy per atom: Epot = -5.134eV  Ekin = 0.068eV (T=526K)  Etot = -5.066eV
+Energy per atom: Epot = -5.132eV  Ekin = 0.067eV (T=518K)  Etot = -5.065eV
+Energy per atom: Epot = -5.129eV  Ekin = 0.066eV (T=508K)  Etot = -5.063eV
+Energy per atom: Epot = -5.126eV  Ekin = 0.064eV (T=492K)  Etot = -5.062eV
+Energy per atom: Epot = -5.124eV  Ekin = 0.062eV (T=477K)  Etot = -5.062eV
+Energy per atom: Epot = -5.123eV  Ekin = 0.061eV (T=474K)  Etot = -5.061eV
+#+end_example
+
