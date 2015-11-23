@@ -1,3 +1,71 @@
+* Theory
+** Density Functional Theory
+In the Kitchin group, we use the Vienna /ab initio/ simulation package (VASP) suit to perform Density functional theory (DFT).
+
+- Solves the Kohn-Sham Equations which approximate the Schrodinger equation with electron density.
+
+- VASP is ideal for bulk system since it uses plane waves to estimate the electron density.
+
+- Although powerful and accurate DFT is too slow for more advanced application, such as molecular dynamics (MD) and larger unit cells.
+
+- MD requires a large number of calculations in series, which DFT is poorly suited for.
+
+** Neural Networks (NN)
+Neural networks are a machine learning technique which can be use to relate an input to 
+
+- This has been successfully implemented to predict potential energies of atomic structures 
+
+- More information: http://dx.doi.org/10.1103/PhysRevLett.98.146401
+
+- A basic feed-forward neural networks is demonstrated in Figure ref:fig-nn for a 2 atom system.
+
+#+label: fig-nn
+#+caption: A basic neural network framework for a 2 atom system.
+#+attr_org: :width 200
+[[./images/nn.png]]
+
+- Feed-forward neural networks are limited by their construction. Atoms cannot be added or disordered using this method.
+
+** Behler-Parrinello descriptors
+To use NNs on variable systems of atoms we need a different set of inputs than atomic positions.
+
+- There are many ways to describe various atomic configurations other than Cartesian coordinates.
+
+- Whatever descriptor we use needs to be accessible without performing a DFT calculation.
+
+- Behler and Parrinello suggested a cutoff radius and ``symmetry functions''.
+
+The cutoff radius $R_{c}$ us useful because it limits the size of the symmetry function required. This is demonstrated in Figure ref:fig-cutoff.
+
+#+label: fig-cutoff
+#+caption: Demonstration of the cutoff radius in
+#+attr_org: :width 600
+[[./images/cutoff.png]]
+
+- Choice of $R_{c}$ is critical! We assume no interactions occur beyond this cutoff.
+
+- This is not suitable for systems with long-range interactions.
+
+For each atom, we construct a ``symmetry functions'' made of various Behler-Parrinello descriptors. Some of these descriptors are demonstrated in Figure ref:fig-behler.
+
+#+label: fig-behler
+#+caption: Visualization of the 1G and 2G Behler descriptors.
+#+attr_org: :width 600
+[[./images/behler.png]]
+
+- We can use as many descriptors as needed to define the system.
+
+- Fewer is better since less variables makes the function smaller, which in turn computes faster.
+
+Finally, for each atom in a system, we calculate the ``symmetry function'' and pass it to a general feed-forward NN as shown in Figure ref:fig-bpnn.
+
+#+label: fig-bpnn
+#+caption: A Behler-Parrinello neural network for a 3 atom system.
+#+attr_org: :width 400
+[[./images/bpnn.png]]
+
+- Then we sum the energy contributions from each atom to get the total energy.
+
 * Convergence calculations
 First, we need to determine an appropriate level of convergence for our calculations. I usually use the natural bulk configuration of a metal for these studies. For Pd, this is fcc.
 
@@ -688,7 +756,6 @@ Now we can try and apply our neural networks to things it was not fit to.
 
 For this, we will use or two neural networks jointly which will save us a good amount of time validating the networks as we begin to extrapolate. This is demonstrated in the next section. 
 
-
 *** Geometry optimization
 First, we expand the region of equation of state to see how well it extrapolates. In Figure ref:fig-app-eos, we expand the region of the original equation of state beyond the black dashed lines.
 
@@ -816,7 +883,7 @@ Vacancy formation energy with 3-3 framework NN: 0.411 eV
 #+end_example
 
 *** Molecular dynamics
-Finally, we try 
+Finally, we try an MD simulation.
 
 #+BEGIN_SRC python :results silent
 from __future__ import print_function
