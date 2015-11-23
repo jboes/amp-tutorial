@@ -420,7 +420,8 @@ We can also submit them to the queue on Gilgamesh:
 
 #+BEGIN_SRC python
 import os
-import subprocess
+import subprocess [[
+]] 
 import time
 
 home = os.getcwd()
@@ -504,7 +505,7 @@ for r, d, f in os.walk('networks'):
 | {u'Pd': [2, 2]} |       497 | 2015-11-18T15:59:22 |     8.921e-05 |   9.956e-04 |  0.000e+00 |
 | {u'Pd': [2, 3]} |       266 | 2015-11-18T15:59:34 |     8.967e-05 |   9.982e-04 |  0.000e+00 |
 
-The single atom unit cell enforces perfect symmetry. This results in cancellation of forces on the atom, meaning we will not be able to use our current neural networks for molecular dynamic simulation.
+The single atom unit cell enforces perfect symmetry. This results in cancellation of forces on the atom in the unit cell. Hence, force RMSE = 0.0, which makes for fast training, but less information to train too.
 
 ** Validation of the network
 Now we need to validate our results to ensure that no over fitting has occurred. First, we will look at the residuals to the training and validation data. Then we will see if the neural networks perform well for their intended purpose. For ease of access, we will add the neural network energy predictions to the database for each structure.
@@ -684,6 +685,7 @@ for r, d, f in os.walk('networks'):
 #+END_SRC
 
 ** Applications
+Now we take a look at some common applications. 
 
 *** Geometry optimization
 #+BEGIN_SRC python
@@ -728,7 +730,7 @@ plt.show()
 
 #+RESULTS:
 
-*** larger structures
+*** Larger structures
 #+BEGIN_SRC python
 from amp import Amp
 import numpy as np
