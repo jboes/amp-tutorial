@@ -1,3 +1,99 @@
+#+LATEX_CLASS: cmu-article
+#+LATEX_CLASS_OPTIONS: [12pt]
+#+LATEX_HEADER: \usepackage{setspace}
+#+LATEX_HEADER: \doublespacing
+
+#+OPTIONS: toc:t
+#+TITLE: Tutorial of open source neural network applications
+#+AUTHOR: Jacob Boes
+
+* Introduction
+All enclosed documentation and data is available from Github at: https://github.com/jboes/amp-tutorial.git
+
+Similarly, the PDF can be found here: https://github.com/jboes/amp-tutorial/blob/master/workbook.pdf
+
+All of the code described within is open source with the exception of the Vienna /ab initio/ simulation package (VASP).
+
+Have questions or are interested in learning more? Feel free to contact me at jboes@andrew.cmu.edu.
+
+* Theory
+** Density Functional Theory
+In the Kitchin group, we use the VASP suit to perform Density functional theory (DFT) calculations.
+
+- Solves the Kohn-Sham Equations which approximate the Schrodinger equation with electron density.
+
+- VASP is ideal for bulk system since it uses plane waves to estimate the electron density.
+
+#+label: fig-elec-dens
+#+caption: Example of a system using plane waves 
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/elec-dens.png]]
+
+- Although powerful and accurate DFT is too slow for more advanced application, such as molecular dynamics (MD) and larger unit cells.
+
+- MD requires a large number of calculations in series, which DFT is poorly suited for.
+
+** Neural Networks (NN)
+Neural networks are a machine learning technique which can be use to relate an input to 
+
+- This has been successfully implemented to predict potential energies of atomic structures 
+
+- A basic feed-forward neural networks is demonstrated in Figure ref:fig-nn for a 2 atom system.
+
+#+label: fig-nn
+#+caption: A basic neural network framework for a 2 atom system.
+#+attr_latex: :width 2in
+#+attr_org: :width 200
+[[./images/nn.png]]
+
+- Feed-forward neural networks are limited by their construction. Atoms cannot be added or disordered using this method.
+
+** Behler-Parrinello descriptors
+To use NNs on variable systems of atoms we need a different set of inputs than atomic positions.
+
+- There are many ways to describe various atomic configurations other than Cartesian coordinates.
+
+- Whatever descriptor we use needs to be accessible without performing a DFT calculation.
+
+- Behler and Parrinello suggested a cutoff radius and ``symmetry functions''.
+
+The cutoff radius $R_{c}$ us useful because it limits the size of the symmetry function required. This is demonstrated in Figure ref:fig-cutoff.
+
+#+label: fig-cutoff
+#+caption: Demonstration of the cutoff radius in
+#+attr_latex: :width 2in
+#+attr_org: :width 200
+[[./images/cutoff.png]]
+
+- Choice of $R_{c}$ is critical! We assume no interactions occur beyond this cutoff.
+
+- This is not suitable for systems with long-range interactions.
+
+For each atom, we construct a ``symmetry functions'' made of various Behler-Parrinello descriptors. Some of these descriptors are demonstrated in Figure ref:fig-behler.
+
+#+label: fig-behler
+#+caption: Visualization of the 1G and 2G Behler descriptors.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/behler.png]]
+
+- We can use as many descriptors as needed to define the system.
+
+- Fewer is better since less variables makes the function smaller, which in turn computes faster.
+
+Finally, for each atom in a system, we calculate the ``symmetry function'' and pass it to a general feed-forward NN as shown in Figure ref:fig-bpnn.
+
+#+label: fig-bpnn
+#+caption: A Behler-Parrinello neural network for a 3 atom system.
+#+attr_latex: :width 3in
+#+attr_org: :width 400
+[[./images/bpnn.png]]
+
+- Then we sum the energy contributions from each atom to get the total energy.
+
+- More information: http://dx.doi.org/10.1103/PhysRevLett.98.146401
+
 * Convergence calculations
 First, we need to determine an appropriate level of convergence for our calculations. I usually use the natural bulk configuration of a metal for these studies. For Pd, this is fcc.
 
@@ -6,6 +102,7 @@ First, we determine an appropriate /k/-point convergence. We will be performing 
 
 #+label: fig-kpts
 #+caption: /k/-point convergence metrics for a single atom unit cell of fcc Pd
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/conv-kpt.png]]
 
@@ -90,6 +187,7 @@ Next, we look at energy cutoff convergence. Similarly, /k/-point density is fixe
 
 #+label: fig-encut
 #+caption: Energy cutoff convergence metrics for a single atom unit cell of fcc Pd.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/conv-encut.png]]
 
@@ -168,6 +266,7 @@ Finally, we look at the effects of electronic convergence criteria on total ener
 
 #+label: fig-ediff
 #+caption: Electronic convergence criteria (ediff) convergence metrics for a single atom unit cell of fcc Pd.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/conv-ediff.png]]
 
@@ -248,6 +347,7 @@ Next we use the convergence criteria to calculate Pd bulk fcc EOS at the desired
 
 #+label: fig-eos
 #+caption: Equation of state for fcc Pd as calculated from DFT.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/eos.png]]
 
@@ -535,11 +635,13 @@ First we look at the residual errors of all the data in the database for each of
 
 #+label: fig-residuals-NN2
 #+caption: Residual errors to the 2-2 framework neural network.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/residuals-NN2.png]]
 
 #+label: fig-residuals-NN3
 #+caption: Residual errors to the 3-3 framework neural network.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/residuals-NN3.png]]
 
@@ -595,11 +697,13 @@ Next, we recreate the equation of state using both of the neural networks and th
 
 #+label: fig-eos-NN2
 #+caption: Equation of state for fcc Pd as calculated from a neural network with 2-2 framework.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/eos-NN2.png]]
 
 #+label: fig-eos-NN3
 #+caption: Equation of state for fcc Pd as calculated from a neural network with 3-3 framework.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/eos-NN3.png]]
 
@@ -685,10 +789,26 @@ for r, d, f in os.walk('networks'):
 #+END_SRC
 
 ** Applications
-Now we take a look at some common applications. 
+Now we can try and apply our neural networks to things it was not fit to.
+
+For this, we will use or two neural networks jointly which will save us a good amount of time validating the networks as we begin to extrapolate. This is demonstrated in the next section.
 
 *** Geometry optimization
-#+BEGIN_SRC python
+First, we expand the region of equation of state to see how well it extrapolates. In Figure ref:fig-app-eos, we expand the region of the original equation of state beyond the black dashed lines.
+
+#+label: fig-app-eos
+#+caption: Expansion of the equation of state beyond the region incorporated into the training set.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/app-eos.png]]
+
+At extreme stretch (factor > 2.07%) both neural networks agree because we have trained it nearly to the cutoff radius of 6.0 $\AA$.
+
+As soon as we strain the lattice below the trained region, the network predictions quickly diverge. This indicates that the training set is not useful for predictions in this region.
+
+We performed 1,000 calculations to produce this figure. To have validated all 1,000 points with DFT would be too time consuming. Instead, we rely on disagreement between neural networks with different framework to probe poorly fitted regions.
+
+#+BEGIN_SRC python :results silent
 from amp import Amp
 import numpy as np
 from ase.lattice.cubic import FaceCenteredCubic
@@ -720,17 +840,40 @@ for calc in ['networks/2-2/',
 
 res = abs(np.array(D['3'].values()) - np.array(D['2'].values()))
 
-#plt.plot(D['2'].keys(), res)
-#plt.show()
+f, ax = plt.subplots(2, 1, sharex=True)
+ax[0].plot(D['2'].keys(), D['2'].values(), 'b', lw=2, label='2-2')
+ax[0].plot(D['3'].keys(), D['3'].values(), 'r', lw=2, label='3-3')
+ax[0].plot([0.85, 0.85], [2, -6], 'k--')
+ax[0].plot([2.07, 2.07], [2, -6], 'k--')
+ax[0].set_ylabel('Potential energy (eV)')
+ax[0].set_xlim(0.6, 2.5)
+ax[0].legend(loc='best')
 
-plt.plot(D['2'].keys(), D['2'].values(), 'b')
-plt.plot(D['3'].keys(), D['3'].values(), 'r')
-plt.show()
+ax[1].plot([0.85, 0.85], [0, 1.8], 'k--')
+ax[1].plot([2.07, 2.07], [0, 1.8], 'k--')
+ax[1].plot(D['2'].keys(), res, 'k', lw=2)
+ax[1].set_ylabel('NN energy difference (eV)')
+ax[1].set_ylim(0, 1.8)
+ax[1].set_xlabel('Strain/stretch factor (%)')
+plt.tight_layout(w_pad=0.0)
+plt.savefig('./images/app-eos.png')
 #+END_SRC
 
-#+RESULTS:
+*** More complex calculations
+Here we attempt to calculate the vacancy formation energy for fcc Pd. This is calculated as shown in Equation ref:eqn-vac.
 
-*** Larger structures
+\begin{eqnarray}
+E_v = E_f - \frac{n_i - 1}{n_i} E_i \label{eqn-vac}
+\end{eqnarray}
+
+from the literature (http://www.cs.sandia.gov/~aematts/pdffiles/PRB66214110.pdf), we know that DFT-GGA should predict a vacancy formation energy of about 1.50 eV.
+
+- Vacancy formation energy with 2-2 framework NN: 4.170 eV
+
+- Vacancy formation energy with 3-3 framework NN: 0.411 eV
+
+neither network does a good job predicting the vacancy formation energy. This is because the networks do not know how to calculate the energy of an fcc lattice with a missing atom.
+
 #+BEGIN_SRC python
 from amp import Amp
 import numpy as np
@@ -760,7 +903,6 @@ for calc in ['networks/2-2/',
     ve = nrg1 - (26/27.)*nrg0
 
     print 'Vacancy formation energy with {0} framework NN: {1:1.3f} eV'.format(fw, ve)
-
 #+END_SRC
 
 #+RESULTS:
@@ -771,14 +913,16 @@ BFGS:   2  23:22:24     -131.407465       0.1290
 BFGS:   3  23:22:29     -131.408432       0.1178
 BFGS:   4  23:22:34     -131.409158       0.0511
 BFGS:   5  23:22:39     -131.406953       0.0411
-Vacancy formation energy with 2-2 framework NN: 4.170
+Vacancy formation energy with 2-2 framework NN: 4.170 eV
 BFGS:   0  23:22:44     -135.182786       0.0558
 BFGS:   1  23:22:49     -135.182910       0.0554
 BFGS:   2  23:22:54     -135.183387       0.0320
-Vacancy formation energy with 3-3 framework NN: 0.411
+Vacancy formation energy with 3-3 framework NN: 0.411 eV
 #+end_example
 
 *** Molecular dynamics
+Finally, we try an MD simulation.
+
 #+BEGIN_SRC python :results silent
 from __future__ import print_function
 from ase.lattice.cubic import FaceCenteredCubic
@@ -793,7 +937,7 @@ atoms = FaceCenteredCubic('Pd',
                                       [1, 0, 1],
                                       [1, 1, 0]],
                           latticeconstant=3.939,
-                          size=(5, 5, 5))
+                          size=(3, 3, 3))
 
 # Describe the interatomic interactions with the Effective Medium Theory
 atoms.set_calculator(Amp('networks/2-2/'))
@@ -801,7 +945,7 @@ atoms.set_calculator(Amp('networks/2-2/'))
 # We want to run MD with constant energy using the Langevin algorithm
 # with a time step of 5 fs, the temperature T and the friction
 # coefficient to 0.02 atomic units.
-dyn = Langevin(atoms, 5 * units.fs, 800 * units.kB, 0.002)
+dyn = Langevin(atoms, 5 * units.fs, 900 * units.kB, 0.002)
 
 
 def printenergy(a=atoms):  # store a reference to atoms in the definition.
@@ -809,22 +953,37 @@ def printenergy(a=atoms):  # store a reference to atoms in the definition.
     epot = a.get_potential_energy() / len(a)
     ekin = a.get_kinetic_energy() / len(a)
     
-dyn.attach(printenergy, interval=1)
+dyn.attach(printenergy, interval=10)
 
 # We also want to save the positions of all atoms after every time step.
 traj = Trajectory('MD.traj', 'w', atoms)
-dyn.attach(traj.write, interval=1)
+dyn.attach(traj.write, interval=10)
 
 # Now run the dynamics
-printenergy()
-dyn.run(1000)
+dyn.run(2000)
 #+END_SRC
 
-#+BEGIN_SRC python
+#+BEGIN_SRC python :results silent
 from ase.io.trajectory import Trajectory
+from amp import Amp
+import matplotlib.pyplot as plt
 from ase.visualize import view
 
 traj = Trajectory('MD.traj', 'r')
 
+
+E2, E3 = [], []
+for atoms in traj:
+   E2 += [atoms.get_potential_energy()]
+
+   atoms.set_calculator(Amp('networks/3-3/'))
+   E3 += [atoms.get_potential_energy()]
+
+# We can use this to visualize every 10th step of the MD simulation.
 view(traj)
+
+#plt.figure(figsize=(6, 4))
+#plt.plot(range(len(E2)), E2)
+#plt.plot(range(len(E3)), E3)
+#plt.show()
 #+END_SRC
