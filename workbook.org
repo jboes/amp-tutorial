@@ -1,10 +1,34 @@
+#+LATEX_CLASS: cmu-article
+#+LATEX_CLASS_OPTIONS: [12pt]
+#+LATEX_HEADER: \usepackage{setspace}
+#+LATEX_HEADER: \doublespacing
+
+#+OPTIONS: toc:t
+#+TITLE: Tutorial of open source neural network applications
+#+AUTHOR: Jacob Boes
+
+* Introduction
+All enclosed documentation and data is available from Github at: https://github.com/jboes/amp-tutorial.git
+
+Similarly, the PDF can be found here: https://github.com/jboes/amp-tutorial/blob/master/workbook.pdf
+
+All of the code described within is open source with the exception of the Vienna /ab initio/ simulation package (VASP).
+
+Have questions or are interested in learning more? Feel free to contact me at jboes@andrew.cmu.edu.
+
 * Theory
 ** Density Functional Theory
-In the Kitchin group, we use the Vienna /ab initio/ simulation package (VASP) suit to perform Density functional theory (DFT).
+In the Kitchin group, we use the VASP suit to perform Density functional theory (DFT) calculations.
 
 - Solves the Kohn-Sham Equations which approximate the Schrodinger equation with electron density.
 
 - VASP is ideal for bulk system since it uses plane waves to estimate the electron density.
+
+#+label: fig-elec-dens
+#+caption: Example of a system using plane waves 
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/elec-dens.png]]
 
 - Although powerful and accurate DFT is too slow for more advanced application, such as molecular dynamics (MD) and larger unit cells.
 
@@ -15,12 +39,11 @@ Neural networks are a machine learning technique which can be use to relate an i
 
 - This has been successfully implemented to predict potential energies of atomic structures 
 
-- More information: http://dx.doi.org/10.1103/PhysRevLett.98.146401
-
 - A basic feed-forward neural networks is demonstrated in Figure ref:fig-nn for a 2 atom system.
 
 #+label: fig-nn
 #+caption: A basic neural network framework for a 2 atom system.
+#+attr_latex: :width 2in
 #+attr_org: :width 200
 [[./images/nn.png]]
 
@@ -39,7 +62,8 @@ The cutoff radius $R_{c}$ us useful because it limits the size of the symmetry f
 
 #+label: fig-cutoff
 #+caption: Demonstration of the cutoff radius in
-#+attr_org: :width 600
+#+attr_latex: :width 2in
+#+attr_org: :width 200
 [[./images/cutoff.png]]
 
 - Choice of $R_{c}$ is critical! We assume no interactions occur beyond this cutoff.
@@ -50,6 +74,7 @@ For each atom, we construct a ``symmetry functions'' made of various Behler-Parr
 
 #+label: fig-behler
 #+caption: Visualization of the 1G and 2G Behler descriptors.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/behler.png]]
 
@@ -61,10 +86,13 @@ Finally, for each atom in a system, we calculate the ``symmetry function'' and p
 
 #+label: fig-bpnn
 #+caption: A Behler-Parrinello neural network for a 3 atom system.
+#+attr_latex: :width 3in
 #+attr_org: :width 400
 [[./images/bpnn.png]]
 
 - Then we sum the energy contributions from each atom to get the total energy.
+
+- More information: http://dx.doi.org/10.1103/PhysRevLett.98.146401
 
 * Convergence calculations
 First, we need to determine an appropriate level of convergence for our calculations. I usually use the natural bulk configuration of a metal for these studies. For Pd, this is fcc.
@@ -74,6 +102,7 @@ First, we determine an appropriate /k/-point convergence. We will be performing 
 
 #+label: fig-kpts
 #+caption: /k/-point convergence metrics for a single atom unit cell of fcc Pd
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/conv-kpt.png]]
 
@@ -158,6 +187,7 @@ Next, we look at energy cutoff convergence. Similarly, /k/-point density is fixe
 
 #+label: fig-encut
 #+caption: Energy cutoff convergence metrics for a single atom unit cell of fcc Pd.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/conv-encut.png]]
 
@@ -236,6 +266,7 @@ Finally, we look at the effects of electronic convergence criteria on total ener
 
 #+label: fig-ediff
 #+caption: Electronic convergence criteria (ediff) convergence metrics for a single atom unit cell of fcc Pd.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/conv-ediff.png]]
 
@@ -316,6 +347,7 @@ Next we use the convergence criteria to calculate Pd bulk fcc EOS at the desired
 
 #+label: fig-eos
 #+caption: Equation of state for fcc Pd as calculated from DFT.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/eos.png]]
 
@@ -602,11 +634,13 @@ First we look at the residual errors of all the data in the database for each of
 
 #+label: fig-residuals-NN2
 #+caption: Residual errors to the 2-2 framework neural network.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/residuals-NN2.png]]
 
 #+label: fig-residuals-NN3
 #+caption: Residual errors to the 3-3 framework neural network.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/residuals-NN3.png]]
 
@@ -662,11 +696,13 @@ Next, we recreate the equation of state using both of the neural networks and th
 
 #+label: fig-eos-NN2
 #+caption: Equation of state for fcc Pd as calculated from a neural network with 2-2 framework.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/eos-NN2.png]]
 
 #+label: fig-eos-NN3
 #+caption: Equation of state for fcc Pd as calculated from a neural network with 3-3 framework.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/eos-NN3.png]]
 
@@ -761,6 +797,7 @@ First, we expand the region of equation of state to see how well it extrapolates
 
 #+label: fig-app-eos
 #+caption: Expansion of the equation of state beyond the region incorporated into the training set.
+#+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/app-eos.png]]
 
@@ -942,9 +979,9 @@ for atoms in traj:
    E3 += [atoms.get_potential_energy()]
 
 # We can use this to visualize every 10th step of the MD simulation.
-#view(traj)
+view(traj)
 
-plt.figure(figsize=(6, 4))
+#plt.figure(figsize=(6, 4))
 #plt.plot(range(len(E2)), E2)
 #plt.plot(range(len(E3)), E3)
 #plt.show()
