@@ -151,8 +151,7 @@ if ready:
 
     ax2 = ax1.twinx()
 
-    #ax2.plot(encut, t, 'ro-')
-    ax2.barv(encut, t, facecolor='r', alpha=0.25)
+    ax2.plot(encut, t, 'ro-')
     ax2.set_ylabel('Calculation time (min)', color='r')
     ax2.set_xlim(encut.min(), encut.max())
     ax2.tick_params(axis='y', colors='r')
@@ -284,7 +283,7 @@ for x in factor:
     atoms.set_cell(np.dot(atoms.get_cell(), delta),
                    scale_atoms=True)
 
-    with jasp('DFT/structure=fcc/convergence=None/factor={0:1.3f}'.format(x),
+    with jasp('./DFT/structure=fcc/convergence=None/factor={0:1.3f}'.format(x),
               xc='PBE',
               kpts=(14, 14, 14), # Choose an appropriate value
               encut=400,
@@ -301,7 +300,8 @@ for x in factor:
 if ready:
     # Here we collect the data to an ASE database
     # for easy future manipulation
-    jb.write_database('DFT/structure=fcc/convergence=None/')
+    jb.write_database('./DFT/structure=fcc/convergence=None/',
+                      db='./networks/db0/data.db')
 
     # We will use only the energies \pm 15 $\AA^{3}$ about 
     # the minimum energy for the figure.
@@ -360,7 +360,7 @@ import os
 import random
 import numpy as np
 
-db = connect('data.db')
+db = connect('./networks/db0/data.db')
 
 n = db.count()
 n_train = int(round(n * 0.9))
@@ -376,10 +376,9 @@ valid_samples = set(n_ids) - set(train_samples)
 db.update(list(train_samples), train_set=True)
 db.update(list(valid_samples), train_set=False)
 
-db0 = connect('train.db')
-
-for d in db.select(['train_set=True']):
-    db0.write(d, key_value_pairs=d.key_value_pairs)
+with connect('./networks/db0/train.db') as db0:
+    for d in db.select(['train_set=True']):
+        db0.write(d, key_value_pairs=d.key_value_pairs)
 #+END_SRC
 
 Now we have sudo-randomly labeled 10% of our calculations for validation, and the rest are waiting to be trained in the new train.db file. This file is also attached: \attachfile{train.db}{(double-click to open)}.
@@ -401,16 +400,16 @@ import os
 
 for n in [2, 3]:
     label = '{0}-{0}'.format(n)
-    wd = os.path.join(os.getcwd(), 'networks/' + label)
+    wd = os.path.join(os.getcwd(), 'networks/db0/' + label)
 
     if not os.path.exists(wd):
         os.makedirs(wd)
 
-    calc = Amp(label="./networks/{0}/".format(label),
+    calc = Amp(label="./networks/db0/{0}/".format(label),
                descriptor=Behler(cutoff=6.0),
                regression=NeuralNetwork(hiddenlayers=(2, '{0}'.format(n))))
 
-    calc.train("./train.db", # The training data
+    calc.train('./networks/db0/train.db', # The training data
                cores=1,
                global_search=None, # not found the simulated annealing feature useful
                extend_variables=False) # feature does not work properly and will crash
@@ -429,7 +428,7 @@ home = os.getcwd()
 for n in [2, 3]:
 
     label = '{0}-{0}'.format(n)
-    wd = os.path.join(home, 'networks/' + label)
+    wd = os.path.join(home, 'networks/db0/' + label)
 
     if not os.path.exists(wd):
         os.makedirs(wd)
@@ -444,7 +443,7 @@ calc = Amp(label="./",
            descriptor=Behler(cutoff=6.0),
            regression=NeuralNetwork(hiddenlayers=(2, {0})))
 
-calc.train("../../train.db", # The training data
+calc.train("./networks/db0/train.db", # The training data
            cores=1,
            global_search=None, # not found the simulated annealing feature useful
            extend_variables=False) # feature does not work properly and will crash
@@ -486,7 +485,7 @@ import json
 print('|Hidden layers|Iteration|Time|Cost Function|Energy RMSE|Force RMSE|')
 print('|-')
 
-for r, d, f in os.walk('networks'):
+for r, d, f in os.walk('networks/db0/'):
     if 'train-log.txt' in f:
         with open(os.path.join(r, 'train-log.txt'), 'r') as fi:
             v = fi.readlines()[-3].split()
@@ -513,10 +512,10 @@ Now we need to validate our results to ensure that no over fitting has occurred.
 from ase.db import connect
 from amp import Amp
 
-db = connect('data.db')
+db = connect('./networks/db0/data.db')
 
-calc2 = Amp('networks/2-2/')
-calc3 = Amp('networks/3-3/')
+calc2 = Amp('./networks/db0/2-2/')
+calc3 = Amp('./networks/db0/3-3/')
 
 for d in db.select():
     atoms = db.get_atoms(d.id)
@@ -549,7 +548,7 @@ from ase.db import connect
 from amp import Amp
 import os
 
-db = connect('data.db')
+db = connect('./networks/db0/data.db')
 
 for n in [2, 3]:
 
@@ -616,9 +615,9 @@ import json
 import time
 from ase.units import kJ
 
-db = connect('data.db')
+db = connect('./networks/db0/data.db')
 
-for r, d, f in os.walk('networks'):
+for r, d, f in os.walk('./networks/db0/'):
     if 'trained-parameters.json' in f:
         calc = Amp(load=r + '/')
 
@@ -688,7 +687,6 @@ Now we can try and apply our neural networks to things it was not fit to.
 
 For this, we will use or two neural networks jointly which will save us a good amount of time validating the networks as we begin to extrapolate. This is demonstrated in the next section. 
 
-
 *** Geometry optimization
 First, we expand the region of equation of state to see how well it extrapolates. In Figure ref:fig-app-eos, we expand the region of the original equation of state beyond the black dashed lines.
 
@@ -711,8 +709,8 @@ import matplotlib.pyplot as plt
 import collections
 
 D = {}
-for calc in ['networks/2-2/',
-             'networks/3-3/']:
+for calc in ['./networks/db0/2-2/',
+             './networks/db0/3-3/']:
 
     D[calc[-2]] = collections.OrderedDict()
     for x in np.linspace(0.60, 2.5, 1000.):
@@ -777,8 +775,8 @@ import matplotlib.pyplot as plt
 from ase.visualize import view
 from ase.optimize import BFGS
 
-for calc in ['networks/2-2/',
-             'networks/3-3/']:
+for calc in ['./networks/db0/2-2/',
+             './networks/db0/3-3/']:
     atoms = FaceCenteredCubic('Pd',
                               directions=[[0, 1, 1],
                                           [1, 0, 1],
@@ -835,7 +833,7 @@ atoms = FaceCenteredCubic('Pd',
                           size=(3, 3, 3))
 
 # Describe the interatomic interactions with the Effective Medium Theory
-atoms.set_calculator(Amp('networks/2-2/'))
+atoms.set_calculator(Amp('./networks/db0/2-2/'))
 
 # We want to run MD with constant energy using the Langevin algorithm
 # with a time step of 5 fs, the temperature T and the friction
@@ -851,34 +849,163 @@ def printenergy(a=atoms):  # store a reference to atoms in the definition.
 dyn.attach(printenergy, interval=10)
 
 # We also want to save the positions of all atoms after every time step.
-traj = Trajectory('MD.traj', 'w', atoms)
+traj = Trajectory('./networks/db1/MD.traj', 'w', atoms)
 dyn.attach(traj.write, interval=10)
 
 # Now run the dynamics
 dyn.run(2000)
 #+END_SRC
 
+* ``Teaching'' the neural network
+** Calculations from MD simulation
+
+[[./images/MD.png]]
+
 #+BEGIN_SRC python :results silent
 from ase.io.trajectory import Trajectory
-from amp import Amp
+from ase.lattice.cubic import FaceCenteredCubic
+import numpy as np
+from jasp import *
 import matplotlib.pyplot as plt
-from ase.visualize import view
+import jbtools.gilgamesh as jb
+JASPRC['queue.walltime'] = '24:00:00'
 
-traj = Trajectory('MD.traj', 'r')
+ready = True
+Ne, nrg, t, s = [], [], [], []
+for i, atoms in enumerate(Trajectory('./networks/db1/MD.traj', 'r')):
 
+    Ne += [atoms.get_potential_energy()]
 
-E2, E3 = [], []
-for atoms in traj:
-   E2 += [atoms.get_potential_energy()]
+    if (i + 1) % 4 == 0:
 
-   atoms.set_calculator(Amp('networks/3-3/'))
-   E3 += [atoms.get_potential_energy()]
+        s += [i + 1]
 
-# We can use this to visualize every 10th step of the MD simulation.
-#view(traj)
+        with jasp('DFT/structure=fcc/convergence=None/factor=None/MD={0}'.format(int(i)),
+                  xc='PBE',
+                  kpts=(5, 5, 5),
+                  encut=400,
+                  ibrion=-1,
+                  atoms=atoms) as calc:
+            try:
+                atoms = calc.get_atoms()
+                nrg += [atoms.get_potential_energy()]
+                t += [calc.get_elapsed_time() / 60.0]
+            except(VaspQueued, VaspSubmitted):
+                ready = False
 
-plt.figure(figsize=(6, 4))
-#plt.plot(range(len(E2)), E2)
-#plt.plot(range(len(E3)), E3)
-#plt.show()
+if ready:
+    # Here we collect the data to an ASE database
+    # for easy future manipulation
+    jb.write_database('./DFT/structure=fcc/convergence=None/',
+                      db='./networks/db1/data.db')
+
+    fig = plt.figure(figsize=(6, 4))
+    ax1 = fig.add_subplot(111)
+    ax1.plot(np.array(range(len(Ne))) + 1, Ne, 'g-')
+    ax1.plot(s, nrg, 'bo-')
+
+    ax1.set_xlim(min(s), max(s))
+    ax1.set_ylabel('Potential energy (eV)', color='b')
+    ax1.tick_params(axis='y', colors='b')
+
+    ax2 = ax1.twinx()
+
+    ax2.scatter(s, t, color='r')
+    ax2.set_ylabel('Calculation time (min)', color='r')
+    ax2.set_xlim(min(s), max(s))
+    ax2.tick_params(axis='y', colors='r')
+    ax2.set_ylim(0, 600)
+
+    ax1.set_xlabel('Time step')
+    plt.tight_layout()
+    plt.savefig('./images/MD.png')
 #+END_SRC
+
+** new training set
+
+#+BEGIN_SRC python :results silent
+from ase.db import connect
+import os
+import random
+import numpy as np
+
+db = connect('./networks/db1/data.db')
+
+n = db.count()
+n_train = int(round(n * 0.9))
+
+n_ids =  np.array(range(n)) + 1
+
+# This will sudo-randomly select 10% of the calculations
+# Which is useful for reproducing our results.
+random.seed(256)
+train_samples = random.sample(n_ids, n_train)
+valid_samples = set(n_ids) - set(train_samples)
+
+db.update(list(train_samples), train_set=True)
+db.update(list(valid_samples), train_set=False)
+
+with connect('./networks/db1/train.db') as db0:
+    for d in db.select(['train_set=True']):
+        db0.write(d, key_value_pairs=d.key_value_pairs)
+#+END_SRC
+
+** training new network
+#+BEGIN_SRC python
+import os
+import subprocess
+import time
+
+home = os.getcwd()
+
+# We will try an iteration for 2 and 3 nodes with 2 hidden layers.
+for n in [2]:
+
+    label = '{0}-{0}'.format(n)
+    wd = os.path.join(home, 'networks/db1/' + label)
+
+    if not os.path.exists(wd):
+        os.makedirs(wd)
+    os.chdir(wd)
+
+    run_amp = '''#!/usr/bin/env python
+from amp import Amp
+from amp.descriptor import *
+from amp.regression import *
+
+calc = Amp(label="./",
+           descriptor=Behler(cutoff=6.0),
+           regression=NeuralNetwork(hiddenlayers=(2, {0})))
+
+calc.train("../train.db", # The training data
+           cores=1,
+           global_search=None, # not found the simulated annealing feature useful
+           extend_variables=False) # feature does not work properly and will crash
+'''.format(n)
+
+    cmd = '''#!/bin/bash
+#PBS -N {0}
+#PBS -l nodes=1:ppn=1
+#PBS -l walltime=24:00:00
+#PBS -l mem=2GB
+#PBS -joe
+cd $PBS_O_WORKDIR
+./submit.py
+#end'''.format(wd)
+
+    with open('submit.py', 'w') as f:
+        f.write(run_amp)
+    os.chmod('submit.py', 0777)
+
+    with open('submit.sh', 'w') as f:
+        f.write(cmd)
+
+    subprocess.call(['qsub', 'submit.sh'])
+    time.sleep(5)
+    os.unlink('submit.sh')
+    os.chdir(wd)
+#+END_SRC
+
+#+RESULTS:
+: 1306508.gilgamesh.cheme.cmu.edu
+
