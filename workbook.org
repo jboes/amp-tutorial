@@ -1065,7 +1065,7 @@ import time
 home = os.getcwd()
 
 # We will try an iteration for 2 and 3 nodes with 2 hidden layers.
-for n in [2]:
+for n in [2, 3]:
 
     label = '{0}-{0}'.format(n)
     wd = os.path.join(home, 'networks/db1/' + label)
@@ -1114,4 +1114,3 @@ cd $PBS_O_WORKDIR
 
 #+RESULTS:
 : 1306508.gilgamesh.cheme.cmu.edu
-
