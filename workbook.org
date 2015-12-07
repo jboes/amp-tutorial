@@ -1115,3 +1115,66 @@ cd $PBS_O_WORKDIR
 #+RESULTS:
 : 1306508.gilgamesh.cheme.cmu.edu
 
+** Attempt 2 with MD simulation
+
+[[./images/MD2.png]]
+
+#+BEGIN_SRC python :results silent
+from ase.io.trajectory import Trajectory
+from ase.lattice.cubic import FaceCenteredCubic
+import numpy as np
+from jasp import *
+import matplotlib.pyplot as plt
+import jbtools.gilgamesh as jb
+JASPRC['queue.walltime'] = '24:00:00'
+
+ready = True
+Ne, nrg, t, s = [], [], [], []
+for i, atoms in enumerate(Trajectory('./networks/db1/MD.traj', 'r')):
+
+    Ne += [atoms.get_potential_energy()]
+
+    if (i + 1) % 4 == 0:
+
+        s += [i + 1]
+
+        with jasp('DFT/structure=fcc/convergence=None/factor=None/MD={0}'.format(int(i)),
+                  xc='PBE',
+                  kpts=(5, 5, 5),
+                  encut=400,
+                  ibrion=-1,
+                  atoms=atoms) as calc:
+            try:
+                atoms = calc.get_atoms()
+                nrg += [atoms.get_potential_energy()]
+                t += [calc.get_elapsed_time() / 60.0]
+            except(VaspQueued, VaspSubmitted):
+                ready = False
+
+if ready:
+    # Here we collect the data to an ASE database
+    # for easy future manipulation
+    jb.write_database('./DFT/structure=fcc/convergence=None/',
+                      db='./networks/db1/data.db')
+
+    fig = plt.figure(figsize=(6, 4))
+    ax1 = fig.add_subplot(111)
+    ax1.plot(np.array(range(len(Ne))) + 1, Ne, 'g-')
+    ax1.plot(s, nrg, 'bo-')
+
+    ax1.set_xlim(min(s), max(s))
+    ax1.set_ylabel('Potential energy (eV)', color='b')
+    ax1.tick_params(axis='y', colors='b')
+
+    ax2 = ax1.twinx()
+
+    ax2.scatter(s, t, color='r')
+    ax2.set_ylabel('Calculation time (min)', color='r')
+    ax2.set_xlim(min(s), max(s))
+    ax2.tick_params(axis='y', colors='r')
+    ax2.set_ylim(0, 600)
+
+    ax1.set_xlabel('Time step')
+    plt.tight_layout()
+    plt.savefig('./images/MD2.png')
+#+END_SRC
