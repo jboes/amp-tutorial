@@ -2,6 +2,7 @@
 #+LATEX_CLASS_OPTIONS: [12pt]
 #+LATEX_HEADER: \usepackage{setspace}
 #+LATEX_HEADER: \doublespacing
+#+STARTUP: hideblocks
 
 #+OPTIONS: toc:t
 #+TITLE: Tutorial of open source neural network applications
@@ -993,7 +994,7 @@ for i, atoms in enumerate(Trajectory('./networks/db0/MD.traj', 'r')):
                   atoms=atoms) as calc:
             try:
                 atoms = calc.get_atoms()
-                nrg += [atoms.get_potential_enerngy()]
+                nrg += [atoms.get_potential_energy()]
                 res += [abs(Ne[-1] - nrg[-1])]
             except(VaspQueued, VaspSubmitted):
                 ready = False
@@ -1007,13 +1008,15 @@ if ready:
     fig = plt.figure(figsize=(6, 4))
     ax1 = fig.add_subplot(111)
     ax1.plot(range(len(Ne)), Ne, 'b-', label='NN prediction')
-    ax1.scatter(Qe[0], Qe[1], facecolor='none',
+    ax1.scatter(s, nrg, facecolor='none',
                 edgecolor='b', label='DFT prediction')
 
     ax1.set_xlim(min(s), max(s))
     ax1.set_ylabel('Potential energy (eV)', color='b')
     ax1.tick_params(axis='y', colors='b')
     ax1.set_ylim(-141, -136)
+    ax1.set_xlabel('Time step')
+    ax1.legend(loc=2)
 
     ax2 = ax1.twinx()
 
@@ -1023,13 +1026,11 @@ if ready:
     ax2.tick_params(axis='y', colors='r')
     ax2.set_ylim(0, 5.0)
 
-    ax1.set_xlabel('Time step')
     plt.tight_layout()
     plt.savefig('./images/MD.png')
 #+END_SRC
 
-** new training set
-
+** New training set
 #+BEGIN_SRC python :results silent
 from ase.db import connect
 import os
@@ -1057,7 +1058,7 @@ with connect('./networks/db1/train.db') as db0:
         db0.write(d, key_value_pairs=d.key_value_pairs)
 #+END_SRC
 
-** training new network
+** Training new network
 #+BEGIN_SRC python
 import os
 import subprocess
@@ -1120,7 +1121,7 @@ cd $PBS_O_WORKDIR
 
 [[./images/MD2.png]]
 
-#+BEGIN_SRC python
+#+BEGIN_SRC python :results silent
 from amp import Amp
 from ase.io.trajectory import Trajectory
 import numpy as np
@@ -1153,6 +1154,8 @@ ax1.set_xlim(min(Qe[0]), max(Qe[0]))
 ax1.set_ylabel('Potential energy (eV)', color='b')
 ax1.tick_params(axis='y', colors='b')
 ax1.set_ylim(-141, -136)
+ax1.set_xlabel('Time step')
+ax1.legend(loc=2)
 
 ax2 = ax1.twinx()
 
@@ -1162,12 +1165,7 @@ ax2.set_xlim(min(Qe[0]), max(Qe[0]))
 ax2.tick_params(axis='y', colors='r')
 ax2.set_ylim(0, 0.5)
 
-ax1.set_xlabel('Time step')
-
-plt.legend(loc='best')
 plt.tight_layout()
 plt.savefig('./images/MD2.png')
 #+END_SRC
-
-#+RESULTS:
 
