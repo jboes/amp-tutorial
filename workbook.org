@@ -15,18 +15,18 @@ Similarly, the PDF can be found here: https://github.com/jboes/amp-tutorial/blob
 
 All of the code described within is open source with the exception of the Vienna /ab initio/ simulation package (VASP).
 
-Have questions or are interested in learning more? Feel free to contact me at jboes@andrew.cmu.edu.
+Have questions or are interested in learning more? Feel free to contact me at: jboes@andrew.cmu.edu.
 
 * Theory
 ** Density Functional Theory
 In the Kitchin group, we use the VASP suit to perform Density functional theory (DFT) calculations.
 
-- Solves the Kohn-Sham Equations which approximate the Schrodinger equation with electron density.
+- Solves the Kohn-Sham Equations which approximate the Schr\"{}odinger equation with electron density.
 
 - VASP is ideal for bulk system since it uses plane waves to estimate the electron density.
 
 #+label: fig-elec-dens
-#+caption: Example of a system using plane waves 
+#+caption: Example of a 2D electron density distribution using plane waves and Gaussians.
 #+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/elec-dens.png]]
@@ -36,9 +36,9 @@ In the Kitchin group, we use the VASP suit to perform Density functional theory 
 - MD requires a large number of calculations in series, which DFT is poorly suited for.
 
 ** Neural Networks (NN)
-Neural networks are a machine learning technique which can be use to relate an input to 
+Neural networks are a machine learning technique which can be use to construct a flexible function from an arbitrary input variable.
 
-- This has been successfully implemented to predict potential energies of atomic structures 
+- This has been successfully implemented to predict _potential energies_ (function output) from _atomic positions_ (input variable).
 
 - A basic feed-forward neural networks is demonstrated in Figure ref:fig-nn for a 2 atom system.
 
@@ -59,10 +59,10 @@ To use NNs on variable systems of atoms we need a different set of inputs than a
 
 - Behler and Parrinello suggested a cutoff radius and ``symmetry functions''.
 
-The cutoff radius $R_{c}$ us useful because it limits the size of the symmetry function required. This is demonstrated in Figure ref:fig-cutoff.
+The cutoff radius $R_{c}$ is useful because it limits the size of the symmetry function required. This is demonstrated in Figure ref:fig-cutoff.
 
 #+label: fig-cutoff
-#+caption: Demonstration of the cutoff radius in
+#+caption: Demonstration of the cutoff radius in a 2D unit cell.
 #+attr_latex: :width 2in
 #+attr_org: :width 200
 [[./images/cutoff.png]]
@@ -71,7 +71,7 @@ The cutoff radius $R_{c}$ us useful because it limits the size of the symmetry f
 
 - This is not suitable for systems with long-range interactions.
 
-For each atom, we construct a ``symmetry functions'' made of various Behler-Parrinello descriptors. Some of these descriptors are demonstrated in Figure ref:fig-behler.
+For each atom, we construct a ``symmetry function'' made of various Behler-Parrinello descriptors. Some of these descriptors are demonstrated in Figure ref:fig-behler.
 
 #+label: fig-behler
 #+caption: Visualization of the 1G and 2G Behler descriptors.
@@ -93,16 +93,16 @@ Finally, for each atom in a system, we calculate the ``symmetry function'' and p
 
 - Then we sum the energy contributions from each atom to get the total energy.
 
-- More information: http://dx.doi.org/10.1103/PhysRevLett.98.146401
+- More information can be found in Reference citenum:behler-2007-nonad.
 
 * Convergence calculations
-First, we need to determine an appropriate level of convergence for our calculations. I usually use the natural bulk configuration of a metal for these studies. For Pd, this is fcc.
+First, we need to determine an appropriate level of convergence for our calculations. I usually use the natural bulk configuration of a metal for these studies. For Pd, this is face centered cubic (fcc).
 
 ** k-point convergence
 First, we determine an appropriate /k/-point convergence. We will be performing many calculations, so a high level of accuracy is desirable, but not if the computational cost is too high. I use a high energy cutoff (400 eV) to make sure there are no effects from encut convergence to potentially skew the results.
 
 #+label: fig-kpts
-#+caption: /k/-point convergence metrics for a single atom unit cell of fcc Pd
+#+caption: /k/-point convergence metrics for a single atom unit cell of fcc Pd.
 #+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/conv-kpt.png]]
@@ -192,7 +192,7 @@ Next, we look at energy cutoff convergence. Similarly, /k/-point density is fixe
 #+attr_org: :width 600
 [[./images/conv-encut.png]]
 
-In this case, Figure ref:fig-encut shows 350 eV energy cutoff is sufficient to achieve 1 meV convergence. Interestingly, the timing information suggests that 450 eV may be a better choice, or higher, but this is difficult to determine with a single run.
+In this case, Figure ref:fig-encut shows 350 eV energy cutoff is sufficient to achieve 1 meV convergence. Interestingly, the timing information suggests that 450 eV may be a better choice, but this is difficult to determine with a single run.
 
 #+BEGIN_SRC python :results silent
 from ase.lattice.cubic import FaceCenteredCubic
@@ -520,8 +520,7 @@ We can also submit them to the queue on Gilgamesh:
 
 #+BEGIN_SRC python
 import os
-import subprocess [[
-]] 
+import subprocess
 import time
 
 home = os.getcwd()
@@ -631,7 +630,7 @@ for d in db.select():
 #+END_SRC
 
 *** Analysis of residuals
-First we look at the residual errors of all the data in the database for each of our frameworks shown in Figure ref:fig-residuals-NN2 and ref:fig-residuals-NN3. For both fits, the validation set has lower RMSE than the training set. This is a good indication that neither has been over fit, which we can also observe for this simple example, since the validation points follow the same trends observed for the training set data. This is also a good example of how adding additional, unnecessary elements to the framework leads to lower overall fitting accuracy for.
+First we look at the residual errors of all the data in the database for each of our frameworks shown in Figure ref:fig-residuals-NN2 and ref:fig-residuals-NN3. For both fits, the validation set has lower RMSE than the training set. This is a good indication that neither has been over fit, which we can also observe for this simple example, since the validation points follow the same trends observed for the training set data. This is also a good example of how adding additional, unnecessary elements to the framework leads to lower overall fitting accuracy.
 
 #+label: fig-residuals-NN2
 #+caption: Residual errors to the 2-2 framework neural network.
@@ -707,7 +706,7 @@ Next, we recreate the equation of state using both of the neural networks and th
 #+attr_org: :width 600
 [[./images/eos-NN3.png]]
 
-Each neural network creats are an excellent fit to the DFT data, and we see that the calculation speed has improved by up to 6 orders of magnitude in the most extreme cases. For this application the choice of framework seems to have little effect on the equation of state produced.
+Each neural network creates an excellent fit to the DFT data, and we see that the calculation speed has improved by up to 6 orders of magnitude in the most extreme cases. For this application the choice of framework seems to have little effect on the equation of state produced.
 
 #+BEGIN_SRC python :results silent
 import numpy as np
@@ -866,7 +865,7 @@ Here we attempt to calculate the vacancy formation energy for fcc Pd. This is ca
 E_v = E_f - \frac{n_i - 1}{n_i} E_i \label{eqn-vac}
 \end{eqnarray}
 
-from the literature (http://www.cs.sandia.gov/~aematts/pdffiles/PRB66214110.pdf), we know that DFT-GGA should predict a vacancy formation energy of about 1.50 eV.
+from the literature cite:mattsson-2002-calcul, we know that DFT-GGA should predict a vacancy formation energy of about 1.50 eV.
 
 - Vacancy formation energy with 2-2 framework NN: 4.170 eV
 
@@ -921,7 +920,7 @@ Vacancy formation energy with 3-3 framework NN: 0.411 eV
 #+end_example
 
 *** Molecular dynamics
-Finally, we try an MD simulation.
+Finally, we try an MD simulation. In Figure ref:fig-MD1 we begin with a 3 \times 3 \times 3 primitive unit cell of Pd and add a random amount of kinetic energy to each of the 27 atoms in the system. We then use the forces on those atoms to determine where they will be after a small forward step in time (5 fs). Then, we use the BPNN to calculate the energy and forces on the perturbed system and repeat for 200 time steps.
 
 #+BEGIN_SRC python :results silent
 from __future__ import print_function
@@ -963,9 +962,12 @@ dyn.attach(traj.write, interval=10)
 dyn.run(2000)
 #+END_SRC
 
-* ``Teaching'' the neural network
-** Calculations from MD simulation
+In Figure ref:fig-MD1, the 
 
+#+label: fig-MD1
+#+caption: Equation of state for fcc Pd as calculated from a neural network with 2-2 framework.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
 [[./images/MD.png]]
 
 #+BEGIN_SRC python :results silent
@@ -1030,7 +1032,10 @@ if ready:
     plt.savefig('./images/MD.png')
 #+END_SRC
 
+* ``Teaching'' the neural network
 ** New training set
+This section is 
+
 #+BEGIN_SRC python :results silent
 from ase.db import connect
 import os
@@ -1169,3 +1174,6 @@ plt.tight_layout()
 plt.savefig('./images/MD2.png')
 #+END_SRC
 
+
+bibliographystyle:unsrt
+bibliography:./bibliography.bib
