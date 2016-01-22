@@ -993,15 +993,15 @@ for i, atoms in enumerate(Trajectory('./networks/db0/MD.traj', 'r')):
             try:
                 atoms = calc.get_atoms()
                 nrg += [atoms.get_potential_energy()]
-                res += [abs(Ne[-1] - nrg[-1]) / len(atoms)]
+                res += [abs(Ne[-1] - nrg[-1])]
             except(VaspQueued, VaspSubmitted):
                 ready = False
 
 if ready:
     # Here we collect the data to an ASE database
     # for easy future manipulation
-    #jb.write_database('./DFT/structure=fcc/convergence=None/',
-    #                  db='./networks/db1/data.db')
+    jb.write_database('./DFT/structure=fcc/convergence=None/',
+                      db='./networks/db1/data.db')
 
     fig = plt.figure(figsize=(6, 4))
     ax1 = fig.add_subplot(111)
@@ -1019,7 +1019,7 @@ if ready:
     ax2 = ax1.twinx()
 
     ax2.scatter(s, res, color='r')
-    ax2.set_ylabel('Absolute residual error (eV/atom)', color='r')
+    ax2.set_ylabel('Absolute residual error (eV)', color='r')
     ax2.set_xlim(min(s), max(s))
     ax2.tick_params(axis='y', colors='r')
     ax2.set_ylim(0, 5.0)
