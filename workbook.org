@@ -4,24 +4,26 @@
 #+LATEX_HEADER: \doublespacing
 #+STARTUP: hideblocks
 
-#+OPTIONS: toc:t
+#+OPTIONS: toc:nil
 #+TITLE: Tutorial of open source neural network applications
 #+AUTHOR: Jacob Boes
+
+\maketitle
 
 * Introduction
 All enclosed documentation and data is available from Github at: https://github.com/jboes/amp-tutorial.git
 
-Similarly, the PDF can be found here: https://github.com/jboes/amp-tutorial/blob/master/workbook.pdf
+- Similarly, the PDF can be found here: https://github.com/jboes/amp-tutorial/blob/master/workbook.pdf
 
-All of the code described within is open source with the exception of the Vienna /ab initio/ simulation package (VASP).
+- All of the code described within is open source with the exception of the Vienna /ab initio/ simulation package (VASP).
 
-Have questions or are interested in learning more? Feel free to contact me at: jboes@andrew.cmu.edu.
+- Have questions or are interested in learning more? Feel free to contact me at: jboes@andrew.cmu.edu.
 
 * Theory
 ** Density Functional Theory
 In the Kitchin group, we use the VASP suit to perform Density functional theory (DFT) calculations.
 
-- Solves the Kohn-Sham Equations which approximate the Schr\"{}odinger equation with electron density.
+- Solves the Kohn-Sham Equations which approximate the Schrodinger equation with electron density.
 
 - VASP is ideal for bulk system since it uses plane waves to estimate the electron density.
 
@@ -109,7 +111,7 @@ First, we determine an appropriate /k/-point convergence. We will be performing 
 
 Figure ref:fig-kpts shows that a Monkhorst-pack grid of roughly (14, 14, 14) /k/-points is sufficient to each 1 meV convergence.
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 from ase.lattice.cubic import FaceCenteredCubic
 import numpy as np
 from jasp import *
@@ -181,7 +183,7 @@ if ready:
     ax1.set_xlabel('Monkhorst-pack grid $k$-point density (k, k, k)')
     plt.tight_layout()
     plt.savefig('images/conv-kpt.png')
-#+END_SRC
+#+END_SRC 
 
 ** encut convergence
 Next, we look at energy cutoff convergence. Similarly, /k/-point density is fixed at (16, 16, 16) for these calculations to ensure no effects from lack of convergence.
@@ -194,7 +196,7 @@ Next, we look at energy cutoff convergence. Similarly, /k/-point density is fixe
 
 In this case, Figure ref:fig-encut shows 350 eV energy cutoff is sufficient to achieve 1 meV convergence. Interestingly, the timing information suggests that 450 eV may be a better choice, but this is difficult to determine with a single run.
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 from ase.lattice.cubic import FaceCenteredCubic
 import numpy as np
 from jasp import *
@@ -272,7 +274,7 @@ Finally, we look at the effects of electronic convergence criteria on total ener
 
 Interestingly, Figure ref:fig-ediff shows that values less than 5e-3 eV (or 5 meV) have no effect on the convergence of the total energy. The calculation times suggest that the default of 1e-4 eV is a good choice.
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 from ase.lattice.cubic import FaceCenteredCubic
 import numpy as np
 from jasp import *
@@ -343,7 +345,7 @@ if ready:
 #+END_SRC
 
 * Equation of state
-Next we use the convergence criteria to calculate Pd bulk fcc EOS at the desired level of accuracy. I have chosen (14, 14, 14) /k/-points, 400 eV encut, and 1e-4 eV ediff (default setting). We will need a good sized sample to fit the neural network. I have chosen a fine grid of 71 points about the expected minimum in energy, and 29 additional points to span the space leading to ``infinite'' separation. Figure ref:fig-eos shows the resulting fit. The code block also generates an ASE database, which we will use from this point on for easy access to the data. It is attached here: \attachfile{data.db}{(double-click to open)}.
+Next we use the convergence criteria to calculate Pd bulk fcc EOS at the desired level of accuracy. I have chosen (14, 14, 14) /k/-points, 400 eV encut, and 1e-4 eV ediff (default setting). We will need a good sized sample to fit the neural network. I have chosen a fine grid of 71 points about the expected minimum in energy, and 29 additional points to span the space leading to ``infinite'' separation. Figure ref:fig-eos shows the resulting fit. The code block also generates an ASE database, which we will use from this point on for easy access to the data. It can be found in the Github repository mentioned in the Introduction.
 
 #+label: fig-eos
 #+caption: Equation of state for fcc Pd as calculated from DFT.
@@ -351,7 +353,7 @@ Next we use the convergence criteria to calculate Pd bulk fcc EOS at the desired
 #+attr_org: :width 600
 [[./images/eos.png]]
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 from ase.lattice.cubic import FaceCenteredCubic
 import numpy as np
 from jasp import *
@@ -455,7 +457,7 @@ To train a neural network we will be using AMP (https://bitbucket.org/andrewpete
 
 Before we begin creating out neural network, we need to separate about 10% of out data into a validation set. This will be useful later, when determining whether over fitting has occurred. There is functionality for this in AMP, but it does not provide with as much control as the following code.
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 from ase.db import connect
 import os
 import random
@@ -482,7 +484,7 @@ with connect('./networks/db0/train.db') as db0:
         db0.write(d, key_value_pairs=d.key_value_pairs)
 #+END_SRC
 
-Now we have sudo-randomly labeled 10% of our calculations for validation, and the rest are waiting to be trained in the new train.db file. This file is also attached: \attachfile{train.db}{(double-click to open)}.
+Now we have sudo-randomly labeled 10% of our calculations for validation, and the rest are waiting to be trained in the new train.db file.
 
 ** Training neural networks
 For all of out neural networks, we will be using the Behler-Parenello (BP) framework for distinguishing between geometries of atoms. Little to no work is published on how to systematically chose an appropriate number of variables for your BP framework, so we simply use the default settings in AMP for now. However, it is worth mentioning that a single G1 type variable (simplest possible descriptor) could be used to describe the fcc EOS, if that is all we are interested in.
@@ -493,7 +495,7 @@ Finally, it is also often desirable to have multiple neural networks which are t
 
 These jobs can be run locally:
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 from amp import Amp
 from amp.descriptor import *
 from amp.regression import *
@@ -518,7 +520,7 @@ for n in [2, 3]:
 
 We can also submit them to the queue on Gilgamesh:
 
-#+BEGIN_SRC python
+#+BEGIN_SRC python :results silent :exports none
 import os
 import subprocess
 import time
@@ -573,13 +575,9 @@ cd $PBS_O_WORKDIR
     os.chdir(wd)
 #+END_SRC
 
-#+RESULTS:
-: 1305344.gilgamesh.cheme.cmu.edu
-: 1305345.gilgamesh.cheme.cmu.edu
-
 Once the calculations finish we can check their convergence using the code below. These are trivial networks to train, so convergence should not be an issue. If there is a problem, restart the calculation to try again. This can be a difficult and time consuming part of the process for more complex system. 
 
-#+BEGIN_SRC python :results raw
+#+BEGIN_SRC python :results raw :exports none
 import os
 import json
 
@@ -609,7 +607,7 @@ The single atom unit cell enforces perfect symmetry. This results in cancellatio
 ** Validation of the network
 Now we need to validate our results to ensure that no over fitting has occurred. First, we will look at the residuals to the training and validation data. Then we will see if the neural networks perform well for their intended purpose. For ease of access, we will add the neural network energy predictions to the database for each structure.
 
-#+BEGIN_SRC python :result silent
+#+BEGIN_SRC python :result silent :exports none
 from ase.db import connect
 from amp import Amp
 
@@ -638,7 +636,7 @@ First we look at the residual errors of all the data in the database for each of
 #+attr_org: :width 800
 [[./images/residuals-1.png]]
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 import numpy as np
 import matplotlib.pyplot as plt
 from ase.db import connect
@@ -704,7 +702,7 @@ Next, we recreate the equation of state using both of the neural networks and th
 
 Each neural network creates an excellent fit to the DFT data, and we see that the calculation speed has improved by up to 6 orders of magnitude in the most extreme cases. For this application the choice of framework seems to have little effect on the equation of state produced.
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 import numpy as np
 import matplotlib.pyplot as plt
 from ase.utils.eos import EquationOfState
@@ -803,7 +801,7 @@ As soon as we strain the lattice below the trained region, the network predictio
 
 We performed 1,000 calculations to produce this figure. To have validated all 1,000 points with DFT would be too time consuming. Instead, we rely on disagreement between neural networks with different framework to probe poorly fitted regions.
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 from amp import Amp
 import numpy as np
 from ase.lattice.cubic import FaceCenteredCubic
@@ -869,7 +867,7 @@ from the literature cite:mattsson-2002-calcul, we know that DFT-GGA should predi
 
 neither network does a good job predicting the vacancy formation energy. This is because the networks do not know how to calculate the energy of an fcc lattice with a missing atom.
 
-#+BEGIN_SRC python
+#+BEGIN_SRC python :results raw :exports none
 from amp import Amp
 import numpy as np
 from ase.lattice.cubic import FaceCenteredCubic
@@ -901,7 +899,6 @@ for calc in ['./networks/db0/2-2/',
 #+END_SRC
 
 #+RESULTS:
-#+begin_example
 BFGS:   0  23:22:14     -131.319326       0.6402
 BFGS:   1  23:22:19     -131.359079       0.4868
 BFGS:   2  23:22:24     -131.407465       0.1290
@@ -913,12 +910,11 @@ BFGS:   0  23:22:44     -135.182786       0.0558
 BFGS:   1  23:22:49     -135.182910       0.0554
 BFGS:   2  23:22:54     -135.183387       0.0320
 Vacancy formation energy with 3-3 framework NN: 0.411 eV
-#+end_example
 
 *** Molecular dynamics
 Finally, we try an MD simulation. In Figure ref:fig-MD1 we begin with a 3 \times 3 \times 3 primitive unit cell of Pd and add a random amount of kinetic energy to each of the 27 atoms in the system. We then use the forces on those atoms to determine where they will be after a small forward step in time (5 fs). Then, we use the BPNN to calculate the energy and forces on the perturbed system and repeat for 200 time steps.
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 from __future__ import print_function
 from ase.lattice.cubic import FaceCenteredCubic
 from ase.md.langevin import Langevin
@@ -966,7 +962,7 @@ In Figure ref:fig-MD1, the NN energy and corresponding DFT energy of every 4th s
 #+attr_org: :width 600
 [[./images/MD.png]]
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 from ase.io.trajectory import Trajectory
 import numpy as np
 from jasp import *
@@ -1028,11 +1024,11 @@ if ready:
     plt.savefig('./images/MD.png')
 #+END_SRC
 
-* ``Teaching'' the neural network
+* Teaching the neural network
 ** New training set
 Here we perform a second iteration of the neural network. Now we will include the DFT validation calculations on the MD simulation shown in Figure ref:fig-MD1. The first two sections are repetitions of previous training code shown above.
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 from ase.db import connect
 import os
 import random
@@ -1062,7 +1058,7 @@ with connect('./networks/db1/train.db') as db0:
 ** Training new network
 Training the second networks took significantly longer since we are no longer training such simple structures. There is now a need for more than one descriptor to define the system. However, 8 descriptors is the default for a single element.
 
-#+BEGIN_SRC python
+#+BEGIN_SRC python :results silent :exports none
 import os
 import subprocess
 import time
@@ -1117,10 +1113,7 @@ cd $PBS_O_WORKDIR
     os.chdir(wd)
 #+END_SRC
 
-#+RESULTS:
-: 1306508.gilgamesh.cheme.cmu.edu
-
-#+BEGIN_SRC python :results raw
+#+BEGIN_SRC python :results raw :exports none
 import os
 import json
 
@@ -1148,7 +1141,7 @@ for r, d, f in os.walk('networks/db1/'):
 *** Network validation
 Since volume is no longer a good description of all structures in our data set, we will simply perform validation of residuals errors based on calculation IDs.
 
-#+BEGIN_SRC python :result silent
+#+BEGIN_SRC python :result silent :exports none
 from ase.db import connect
 from amp import Amp
 
@@ -1176,7 +1169,7 @@ Figure ref:fig-residuals-2 shows that the second iteration of the fit is not as 
 #+attr_org: :width 800
 [[./images/residuals-2.png]]
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 import numpy as np
 import matplotlib.pyplot as plt
 from ase.db import connect
@@ -1236,7 +1229,7 @@ Normalizing these residuals on a per atom basis gives absolute residuals errors 
 #+attr_org: :width 600
 [[./images/MD2.png]]
 
-#+BEGIN_SRC python :results silent
+#+BEGIN_SRC python :results silent :exports none
 from amp import Amp
 from ase.io.trajectory import Trajectory
 import numpy as np
