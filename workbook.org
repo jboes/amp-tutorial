@@ -962,10 +962,10 @@ dyn.attach(traj.write, interval=10)
 dyn.run(2000)
 #+END_SRC
 
-In Figure ref:fig-MD1, the 
+In Figure ref:fig-MD1, the NN energy and corresponding DFT energy of every 4th step is shown. Although the NN predicts the upward trend in energy correctly, the residuals are quite large. This is likely not an acceptable level of error for most applications.
 
 #+label: fig-MD1
-#+caption: Equation of state for fcc Pd as calculated from a neural network with 2-2 framework.
+#+caption: Molecular dynamic simulation of a 3 \times 3 \times 3 primitive Pd fcc unit cell. First iteration of 2-2 framework predictions.
 #+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/MD.png]]
@@ -997,7 +997,7 @@ for i, atoms in enumerate(Trajectory('./networks/db0/MD.traj', 'r')):
             try:
                 atoms = calc.get_atoms()
                 nrg += [atoms.get_potential_energy()]
-                res += [abs(Ne[-1] - nrg[-1])]
+                res += [abs(Ne[-1] - nrg[-1]) / len(atoms)]
             except(VaspQueued, VaspSubmitted):
                 ready = False
 
@@ -1023,7 +1023,7 @@ if ready:
     ax2 = ax1.twinx()
 
     ax2.scatter(s, res, color='r')
-    ax2.set_ylabel('Absolute residual error (eV)', color='r')
+    ax2.set_ylabel('Absolute residual error (eV/atom)', color='r')
     ax2.set_xlim(min(s), max(s))
     ax2.tick_params(axis='y', colors='r')
     ax2.set_ylim(0, 5.0)
@@ -1034,7 +1034,7 @@ if ready:
 
 * ``Teaching'' the neural network
 ** New training set
-This section is 
+Here we perform a second iteration of the neural network. Now we will include the DFT validation calculations on the MD simulation shown in Figure ref:fig-MD1. The first two sections are repetitions of previous training code shown above.
 
 #+BEGIN_SRC python :results silent
 from ase.db import connect
@@ -1064,6 +1064,8 @@ with connect('./networks/db1/train.db') as db0:
 #+END_SRC
 
 ** Training new network
+Training the second networks took significantly longer since we are no longer training such simple structures. There is now a need for more than one descriptor to define the system. Fortunately the 
+
 #+BEGIN_SRC python
 import os
 import subprocess
@@ -1122,8 +1124,40 @@ cd $PBS_O_WORKDIR
 #+RESULTS:
 : 1306508.gilgamesh.cheme.cmu.edu
 
-** Attempt 2 with MD simulation
+#+BEGIN_SRC python :results raw
+import os
+import json
 
+print('|Hidden layers|Iteration|Time|Cost Function|Energy RMSE|Force RMSE|')
+print('|-')
+
+for r, d, f in os.walk('networks/db1/'):
+    if 'train-log.txt' in f:
+        with open(os.path.join(r, 'train-log.txt'), 'r') as fi:
+            v = fi.readlines()[-5].split()
+
+    if 'trained-parameters.json' in f:
+        with open(os.path.join(r, 'trained-parameters.json'), 'r') as fi:
+            p = json.load(fi)
+        n = p['hiddenlayers']
+        print('|{0}|{1}|{2}|{3}|{4}|{5}|'.format(n, v[0], v[1], v[2], v[3], v[4]))
+#+END_SRC
+
+#+RESULTS:
+| Hidden layers   | Iteration | Time                | Cost Function | Energy RMSE | Force RMSE |
+|-----------------+-----------+---------------------+---------------+-------------+------------|
+| {u'Pd': [2, 2]} |      6544 | 2015-12-05T21:56:51 |     4.936e-02 |   3.080e-03 |  9.436e-02 |
+| {u'Pd': [2, 3]} |      3494 | 2015-12-02T13:06:09 |     4.905e-02 |   3.131e-03 |  9.401e-02 |
+
+** Attempt 2 with MD simulation
+If we re-calculate the energy of the MD trajectory from Figure ref:fig-MD1, we can see in Figure ref:fig-MD2 that the predictions are greatly improved. Note that the scale of absolute residuals on the right is an order of magnitude lower than before.
+
+Normalizing these residuals on a per atom basis gives absolute residuals errors below 5 meV/atom. This is considered an acceptable level of error for most applications in the literature, but will not be sufficient for all purposes still. Training large systems of atoms to even higher levels of accuracy will become quite difficult since AMP works on a cost function normalized by the number of atoms in each system. This preferentially results in lower levels of absolute residual error for small systems.
+
+#+label: fig-MD2
+#+caption: Molecular dynamic simulation of a 3 \times 3 \times 3 primitive Pd fcc unit cell.  Second iteration of 2-2 framework predictions.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
 [[./images/MD2.png]]
 
 #+BEGIN_SRC python :results silent
@@ -1173,7 +1207,6 @@ ax2.set_ylim(0, 0.5)
 plt.tight_layout()
 plt.savefig('./images/MD2.png')
 #+END_SRC
-
 
 bibliographystyle:unsrt
 bibliography:./bibliography.bib
