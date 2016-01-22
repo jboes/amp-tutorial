@@ -470,7 +470,7 @@ n_train = int(round(n * 0.9))
 
 n_ids =  np.array(range(n)) + 1
 
-# This will sudo-randomly select 10% of the calculations
+# This will pseudo-randomly select 10% of the calculations
 # Which is useful for reproducing our results.
 random.seed(256)
 train_samples = random.sample(n_ids, n_train)
