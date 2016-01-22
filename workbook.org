@@ -21,7 +21,7 @@ All enclosed documentation and data is available from Github at: https://github.
 
 * Theory
 ** Density Functional Theory
-In the Kitchin group, we use the VASP suit to perform Density functional theory (DFT) calculations.
+In the Kitchin group, we use the VASP suite to perform Density functional theory (DFT) calculations.
 
 - Solves the Kohn-Sham Equations which approximate the Schrodinger equation with electron density.
 
