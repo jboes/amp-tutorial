@@ -630,19 +630,13 @@ for d in db.select():
 #+END_SRC
 
 *** Analysis of residuals
-First we look at the residual errors of all the data in the database for each of our frameworks shown in Figure ref:fig-residuals-NN2 and ref:fig-residuals-NN3. For both fits, the validation set has lower RMSE than the training set. This is a good indication that neither has been over fit, which we can also observe for this simple example, since the validation points follow the same trends observed for the training set data. This is also a good example of how adding additional, unnecessary elements to the framework leads to lower overall fitting accuracy.
+First we look at the residual errors of all the data in the database for each of our frameworks shown in Figure ref:fig-residuals-1. For both fits, the validation set has lower RMSE than the training set. This is a good indication that neither has been over fit, which we can also observe for this simple example, since the validation points follow the same trends observed for the training set data. This is also a good example of how adding additional, unnecessary elements to the framework leads to lower overall fitting accuracy.
 
-#+label: fig-residuals-NN2
-#+caption: Residual errors to the 2-2 framework neural network.
+#+label: fig-residuals-1
+#+caption: Residual errors to the 2-2 and 3-3 framework neural network.
 #+attr_latex: :width 6in
-#+attr_org: :width 600
-[[./images/residuals-NN2.png]]
-
-#+label: fig-residuals-NN3
-#+caption: Residual errors to the 3-3 framework neural network.
-#+attr_latex: :width 6in
-#+attr_org: :width 600
-[[./images/residuals-NN3.png]]
+#+attr_org: :width 800
+[[./images/residuals-1.png]]
 
 #+BEGIN_SRC python :results silent
 import numpy as np
@@ -653,15 +647,17 @@ import os
 
 db = connect('./networks/db0/data.db')
 
-for n in [2, 3]:
+f, ax = plt.subplots(1, 2, sharey=True, figsize=(8, 4))
 
-    Qe, Ne, vol, ind = [], [], [], []
+for i, n in enumerate([2, 3]):
+
+    Qe, Ne, var, ind = [], [], [], []
     for d in db.select():
 
-        Qe += [d.energy]
-        vol += [d.volume]
+        Qe += [d.energy / d.natoms]
+        var += [d.id]
 
-        Ne += [d['NN{0}'.format(n)]]
+        Ne += [d['NN{0}'.format(n)] / d.natoms]
         ind += [d.train_set]
 
     res = np.array(Ne) - np.array(Qe)
@@ -671,24 +667,24 @@ for n in [2, 3]:
     vRMSE = np.sqrt(np.sum(valid ** 2)/ len(valid))
     tRMSE = np.sqrt(np.sum(train ** 2)/ len(train))
 
-    plt.figure(figsize=(6, 4))
+    ax[i].text(5, -0.0075,
+               'Trained RMSE: {0:1.2f} meV/atom'.format(tRMSE * 1000),
+               color='b', ha='left')
+    ax[i].text(5, -0.009,
+               'Validation RMSE: {0:1.2f} meV/atom'.format(vRMSE * 1000),
+               color='r', ha='left')
 
-    plt.text(60, 0.0085, 
-             'Trained RMSE: {0:1.2f} meV/atom'.format(tRMSE * 1000),
-             color='b', ha='left')
-    plt.text(60, 0.0070, 
-             'Validation RMSE: {0:1.2f} meV/atom'.format(vRMSE * 1000),
-             color='r', ha='left')
+    ax[i].scatter(var, train, color='b')
+    ax[i].scatter(var, valid, color='r')
+    ax[i].plot([min(var), max(var)], [0, 0], 'k--')
+    ax[i].set_xlim(min(var), max(var))
+    ax[i].set_title('8-{0}-{0}-1 framework'.format(n))
+    ax[i].set_xlabel('Calculation ID')
 
-    plt.scatter(vol, train, color='b')
-    plt.scatter(vol, valid, color='r')
-    plt.plot([min(vol), max(vol)], [0, 0], 'k--')
-    plt.xlim(min(vol), max(vol))
-    plt.ylim(-0.01, 0.01)
-    plt.xlabel('Volume ($\AA^{3}$/atom)')
-    plt.ylabel('Residual error (eV/atom)')
-    plt.tight_layout()
-    plt.savefig('./images/residuals-NN{0}.png'.format(n))
+ax[0].set_ylim(-0.01, 0.01)
+ax[0].set_ylabel('Residual error (eV/atom)')
+plt.tight_layout(w_pad=-0.8)
+plt.savefig('./images/residuals-1.png')
 #+END_SRC
 
 *** Recreate the equation of state
@@ -1004,8 +1000,8 @@ for i, atoms in enumerate(Trajectory('./networks/db0/MD.traj', 'r')):
 if ready:
     # Here we collect the data to an ASE database
     # for easy future manipulation
-    jb.write_database('./DFT/structure=fcc/convergence=None/',
-                      db='./networks/db1/data.db')
+    #jb.write_database('./DFT/structure=fcc/convergence=None/',
+    #                  db='./networks/db1/data.db')
 
     fig = plt.figure(figsize=(6, 4))
     ax1 = fig.add_subplot(111)
@@ -1064,7 +1060,7 @@ with connect('./networks/db1/train.db') as db0:
 #+END_SRC
 
 ** Training new network
-Training the second networks took significantly longer since we are no longer training such simple structures. There is now a need for more than one descriptor to define the system. Fortunately the 
+Training the second networks took significantly longer since we are no longer training such simple structures. There is now a need for more than one descriptor to define the system. However, 8 descriptors is the default for a single element.
 
 #+BEGIN_SRC python
 import os
@@ -1149,13 +1145,93 @@ for r, d, f in os.walk('networks/db1/'):
 | {u'Pd': [2, 2]} |      6544 | 2015-12-05T21:56:51 |     4.936e-02 |   3.080e-03 |  9.436e-02 |
 | {u'Pd': [2, 3]} |      3494 | 2015-12-02T13:06:09 |     4.905e-02 |   3.131e-03 |  9.401e-02 |
 
+*** Network validation
+Since volume is no longer a good description of all structures in our data set, we will simply perform validation of residuals errors based on calculation IDs.
+
+#+BEGIN_SRC python :result silent
+from ase.db import connect
+from amp import Amp
+
+db = connect('./networks/db1/data.db')
+
+calc2 = Amp('./networks/db1/2-2/')
+calc3 = Amp('./networks/db1/3-3/')
+
+for d in db.select():
+    atoms = db.get_atoms(d.id)
+    atoms.set_calculator(calc2)
+    nrg2 = atoms.get_potential_energy()
+
+    atoms.set_calculator(calc3)
+    nrg3 = atoms.get_potential_energy()
+
+    db.update(d.id, NN2=nrg2, NN3=nrg3)
+#+END_SRC
+
+Figure ref:fig-residuals-2 shows that the second iteration of the fit is not as accurate as the first. This is because we have expanded the scope of the potential energy surface we are trying to fit to. Additional accuracy can be obtained by further sampling of similar structures, in this region of the potential energy surface. For most current applications with NN, an RMSE of $\approx$ 3 meV/atom is considered to be more than sufficient.
+
+#+label: fig-residuals-2
+#+caption: Residual errors to the 2-2 and 3-3 framework neural network after the second iteration of training. Calculation numbers greater than 100 are the MD trajectory structures.
+#+attr_latex: :width 6in
+#+attr_org: :width 800
+[[./images/residuals-2.png]]
+
+#+BEGIN_SRC python :results silent
+import numpy as np
+import matplotlib.pyplot as plt
+from ase.db import connect
+from amp import Amp
+import os
+
+db = connect('./networks/db1/data.db')
+
+f, ax = plt.subplots(1, 2, sharey=True, figsize=(8, 4))
+
+for i, n in enumerate([2, 3]):
+
+    Qe, Ne, var, ind = [], [], [], []
+    for d in db.select():
+
+        Qe += [d.energy / d.natoms]
+        var += [d.id]
+
+        Ne += [d['NN{0}'.format(n)] / d.natoms]
+        ind += [d.train_set]
+
+    res = np.array(Ne) - np.array(Qe)
+    mask = np.array(ind)
+    valid = np.ma.masked_array(res, mask)
+    train = np.ma.masked_array(res, ~mask)
+    vRMSE = np.sqrt(np.sum(valid ** 2)/ len(valid))
+    tRMSE = np.sqrt(np.sum(train ** 2)/ len(train))
+
+    ax[i].text(5, -0.015,
+               'Trained RMSE: {0:1.2f} meV/atom'.format(tRMSE * 1000),
+               color='b', ha='left')
+    ax[i].text(5, -0.018,
+               'Validation RMSE: {0:1.2f} meV/atom'.format(vRMSE * 1000),
+               color='r', ha='left')
+
+    ax[i].scatter(var, train, color='b')
+    ax[i].scatter(var, valid, color='r')
+    ax[i].plot([min(var), max(var)], [0, 0], 'k--')
+    ax[i].set_xlim(min(var), max(var))
+    ax[i].set_title('8-{0}-{0}-1 framework'.format(n))
+    ax[i].set_xlabel('Calculation ID')
+
+ax[0].set_ylim(-0.02, 0.02)
+ax[0].set_ylabel('Residual error (eV/atom)')
+plt.tight_layout(w_pad=0)
+plt.savefig('./images/residuals-2.png')
+#+END_SRC
+
 ** Attempt 2 with MD simulation
 If we re-calculate the energy of the MD trajectory from Figure ref:fig-MD1, we can see in Figure ref:fig-MD2 that the predictions are greatly improved. Note that the scale of absolute residuals on the right is an order of magnitude lower than before.
 
 Normalizing these residuals on a per atom basis gives absolute residuals errors below 5 meV/atom. This is considered an acceptable level of error for most applications in the literature, but will not be sufficient for all purposes still. Training large systems of atoms to even higher levels of accuracy will become quite difficult since AMP works on a cost function normalized by the number of atoms in each system. This preferentially results in lower levels of absolute residual error for small systems.
 
 #+label: fig-MD2
-#+caption: Molecular dynamic simulation of a 3 \times 3 \times 3 primitive Pd fcc unit cell.  Second iteration of 2-2 framework predictions.
+#+caption: Molecular dynamic simulation of a 3 \times 3 \times 3 primitive Pd fcc unit cell. Second iteration of 2-2 framework predictions.
 #+attr_latex: :width 6in
 #+attr_org: :width 600
 [[./images/MD2.png]]
