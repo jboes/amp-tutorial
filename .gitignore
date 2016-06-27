@@ -1,0 +1,7 @@
+*.pyc
+DFT*
+auto/
+workbook.tex
+fingerprint-derivatives.*
+fingerprints.*
+neighborlists.*

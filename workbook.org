@@ -1,0 +1,1251 @@
+#+LATEX_CLASS: cmu-article
+#+LATEX_CLASS_OPTIONS: [12pt]
+#+LATEX_HEADER: \usepackage{setspace}
+#+LATEX_HEADER: \doublespacing
+#+STARTUP: hideblocks
+
+#+OPTIONS: toc:nil
+#+TITLE: Tutorial of open source neural network applications
+#+AUTHOR: Jacob Boes
+
+\maketitle
+
+* Introduction
+All enclosed documentation and data is available from Github at: https://github.com/jboes/amp-tutorial.git
+
+- Similarly, the PDF can be found here: https://github.com/jboes/amp-tutorial/blob/master/workbook.pdf
+
+- All of the code described within is open source with the exception of the Vienna /ab initio/ simulation package (VASP).
+
+- Have questions or are interested in learning more? Feel free to contact me at: jboes@andrew.cmu.edu.
+
+* Theory
+** Density Functional Theory
+In the Kitchin group, we use the VASP suit to perform Density functional theory (DFT) calculations.
+
+- Solves the Kohn-Sham Equations which approximate the Schrodinger equation with electron density.
+
+- VASP is ideal for bulk system since it uses plane waves to estimate the electron density.
+
+#+label: fig-elec-dens
+#+caption: Example of a 2D electron density distribution using plane waves and Gaussians.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/elec-dens.png]]
+
+- Although powerful and accurate DFT is too slow for more advanced application, such as molecular dynamics (MD) and larger unit cells.
+
+- MD requires a large number of calculations in series, which DFT is poorly suited for.
+
+** Neural Networks (NN)
+Neural networks are a machine learning technique which can be use to construct a flexible function from an arbitrary input variable.
+
+- This has been successfully implemented to predict _potential energies_ (function output) from _atomic positions_ (input variable).
+
+- A basic feed-forward neural networks is demonstrated in Figure ref:fig-nn for a 2 atom system.
+
+#+label: fig-nn
+#+caption: A basic neural network framework for a 2 atom system.
+#+attr_latex: :width 2in
+#+attr_org: :width 200
+[[./images/nn.png]]
+
+- Feed-forward neural networks are limited by their construction. Atoms cannot be added or disordered using this method.
+
+** Behler-Parrinello descriptors
+To use NNs on variable systems of atoms we need a different set of inputs than atomic positions.
+
+- There are many ways to describe various atomic configurations other than Cartesian coordinates.
+
+- Whatever descriptor we use needs to be accessible without performing a DFT calculation.
+
+- Behler and Parrinello suggested a cutoff radius and ``symmetry functions''.
+
+The cutoff radius $R_{c}$ is useful because it limits the size of the symmetry function required. This is demonstrated in Figure ref:fig-cutoff.
+
+#+label: fig-cutoff
+#+caption: Demonstration of the cutoff radius in a 2D unit cell.
+#+attr_latex: :width 2in
+#+attr_org: :width 200
+[[./images/cutoff.png]]
+
+- Choice of $R_{c}$ is critical! We assume no interactions occur beyond this cutoff.
+
+- This is not suitable for systems with long-range interactions.
+
+For each atom, we construct a ``symmetry function'' made of various Behler-Parrinello descriptors. Some of these descriptors are demonstrated in Figure ref:fig-behler.
+
+#+label: fig-behler
+#+caption: Visualization of the 1G and 2G Behler descriptors.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/behler.png]]
+
+- We can use as many descriptors as needed to define the system.
+
+- Fewer is better since less variables makes the function smaller, which in turn computes faster.
+
+Finally, for each atom in a system, we calculate the ``symmetry function'' and pass it to a general feed-forward NN as shown in Figure ref:fig-bpnn.
+
+#+label: fig-bpnn
+#+caption: A Behler-Parrinello neural network for a 3 atom system.
+#+attr_latex: :width 3in
+#+attr_org: :width 400
+[[./images/bpnn.png]]
+
+- Then we sum the energy contributions from each atom to get the total energy.
+
+- More information can be found in Reference citenum:behler-2007-nonad.
+
+* Convergence calculations
+First, we need to determine an appropriate level of convergence for our calculations. I usually use the natural bulk configuration of a metal for these studies. For Pd, this is face centered cubic (fcc).
+
+** k-point convergence
+First, we determine an appropriate /k/-point convergence. We will be performing many calculations, so a high level of accuracy is desirable, but not if the computational cost is too high. I use a high energy cutoff (400 eV) to make sure there are no effects from encut convergence to potentially skew the results.
+
+#+label: fig-kpts
+#+caption: /k/-point convergence metrics for a single atom unit cell of fcc Pd.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/conv-kpt.png]]
+
+Figure ref:fig-kpts shows that a Monkhorst-pack grid of roughly (16, 16, 16) /k/-points is sufficient to each 1 meV convergence.
+
+#+BEGIN_SRC python :results silent :exports none
+from ase.lattice.cubic import FaceCenteredCubic as fcc
+from vasp import Vasp
+from vasp.vasprc import VASPRC
+import numpy as np
+import os
+VASPRC['queue.walltime'] = '24:00:00'
+
+# Define the atoms object of interest
+atoms = fcc('Pd',
+            directions=[[0, 1, 1],
+                        [1, 0, 1],
+                        [1, 1, 0]])
+
+# We will sample a large range of k-points
+calcs = [Vasp('DFT/bulk=fcc/conv=kpts/kpts={}'.format(k),
+              xc='pbe',
+              kpts=[k]*3,
+              encut=400,   # Choose a relatively large value
+              nsw=0,       # Perform a single-point calculationyoutube
+              atoms=atoms)
+         for k in np.arange(6, 31, 2)]
+nrg = [calc.potential_energy for calc in calcs]
+Vasp.stop_if(None in nrg)
+
+# Write all entries to database
+if not os.path.exists('database/'):
+    os.makedirs('database/')
+[calc.write2db('database/DFT.db', parser='=') for calc in calcs]
+#+END_SRC
+
+#+BEGIN_SRC python :results silent :exports none
+from ase.db import connect
+import matplotlib.pyplot as plt
+import numpy as np
+
+nrg, t, kpts = [], [], []
+with connect('database/DFT.db') as db:
+    for d in db.select('conv=kpts'):
+        nrg += [d.energy]
+        t += [d.data.ctime / 60.]
+        kpts += [d.kpts]
+
+# Take all energies in reference to the last
+nrg = np.array(nrg) - nrg[-1]
+kpts = np.array(kpts)
+
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.plot(kpts, nrg, 'bo-')
+
+tol = 0.001
+ax.plot([kpts.min(), kpts.max()], [tol, tol], 'k--')
+ax.plot([kpts.min(), kpts.max()], [-tol, -tol], 'k--')
+
+ax.set_xlim(kpts.min(), kpts.max())
+ax.set_ylabel('Relative potential energy (eV)', color='b')
+ax.tick_params(axis='y', colors='b')
+
+ax1 = ax.twinx()
+
+ax1.plot(kpts, t, 'ro-')
+ax1.set_ylabel('Calculation time (min/atom)', color='r')
+ax1.set_xlim(kpts.min(), kpts.max())
+ax1.tick_params(axis='y', colors='r')
+ax1.set_ylim(0, 10)
+
+ax.set_xlabel('Monkhorst-pack grid $k$-point density (k, k, k)')
+plt.tight_layout()
+plt.savefig('images/conv-kpt.png')
+#+END_SRC
+
+** encut convergence
+Next, we look at energy cutoff convergence. Similarly, /k/-point density is fixed at (16, 16, 16) for these calculations to ensure no effects from lack of convergence.
+
+#+label: fig-encut
+#+caption: Energy cutoff convergence metrics for a single atom unit cell of fcc Pd.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/conv-encut.png]]
+
+In this case, Figure ref:fig-encut shows 350 eV energy cutoff is sufficient to achieve 1 meV convergence.
+
+#+BEGIN_SRC python :results silent :exports none
+from ase.lattice.cubic import FaceCenteredCubic as fcc
+from vasp import Vasp
+from vasp.vasprc import VASPRC
+import numpy as np
+VASPRC['queue.walltime'] = '24:00:00'
+
+atoms = fcc('Pd',
+            directions=[[0, 1, 1],
+                        [1, 0, 1],
+                        [1, 1, 0]])
+
+# We will sample a large range of energy cutoffs
+calcs = [Vasp('DFT/bulk=fcc/conv=encut/encut={}'.format(k),
+              xc='pbe',
+              kpts=[16]*3,
+              encut=k,
+              nsw=0,
+              atoms=atoms)
+         for k in np.arange(300, 1050, 50)]
+nrg = [calc.potential_energy for calc in calcs]
+Vasp.stop_if(None in nrg)
+
+# Write all entries to database
+[calc.write2db('database/DFT.db', parser='=')
+ for calc in calcs]
+#+END_SRC
+
+#+BEGIN_SRC python :results silent :exports none
+from ase.db import connect
+import matplotlib.pyplot as plt
+import numpy as np
+
+nrg, t, encut = [], [], []
+with connect('database/DFT.db') as db:
+    for d in db.select('conv=encut'):
+        nrg += [d.energy]
+        t += [d.data.ctime / 60.]
+        encut += [d.encut]
+
+# Take all energies in reference to the last
+nrg = np.array(nrg) - nrg[-1]
+encut = np.array(encut)
+
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.plot(encut, nrg, 'bo-')
+
+tol = 0.001
+ax.plot([encut.min(), encut.max()], [tol, tol], 'k--')
+ax.plot([encut.min(), encut.max()], [-tol, -tol], 'k--')
+
+ax.set_xlim(encut.min(), encut.max())
+ax.set_ylabel('Relative potential energy (eV)', color='b')
+ax.tick_params(axis='y', colors='b')
+
+ax1 = ax.twinx()
+
+ax1.plot(encut, t, 'ro-')
+ax1.set_ylabel('Calculation time (min/atom)', color='r')
+ax1.set_xlim(encut.min(), encut.max())
+ax1.tick_params(axis='y', colors='r')
+ax1.set_ylim(0, 10)
+
+ax.set_xlabel('Energy cutoff (eV)')
+plt.tight_layout()
+plt.savefig('./images/conv-encut.png')
+#+END_SRC
+
+* Equation of state
+Next we use the convergence criteria to calculate Pd bulk fcc EOS at the desired level of accuracy. I have chosen (16, 16, 16) /k/-points, 350 eV encut. We will need a good sized sample to fit the neural network. I have chosen a fine grid of 71 points about the expected minimum in energy, and 29 additional points to span the space leading to ``infinite'' separation. Figure ref:fig-eos shows the resulting fit. The code block also generates an ASE database, which we will use from this point on for easy access to the data. It can be found in the Github repository mentioned in the introduction.
+
+#+label: fig-eos
+#+caption: Equation of state for fcc Pd as calculated from DFT.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/eos.png]]
+
+#+BEGIN_SRC python :results silent :exports none
+from ase.lattice.cubic import FaceCenteredCubic as fcc
+from vasp import Vasp
+from vasp.vasprc import VASPRC
+VASPRC['queue.walltime'] = '24:00:00'
+
+atoms = fcc('Pd',
+            directions=[[0, 1, 1],
+                        [1, 0, 1],
+                        [1, 1, 0]])
+
+calc = Vasp('DFT/bulk=fcc/conv=None/factor=1.00',
+            xc='pbe',
+            kpts=[16]*3,
+            encut=350,
+            ibrion=2,
+            isif=3,      # Full relaxation
+            ediff=1e-6,  # Raise the relaxation criteria
+            nsw=10,
+            atoms=atoms)
+nrg = calc.potential_energy
+Vasp.stop_if(nrg is None)
+calc.write2db('database/DFT.db', parser='=', keys={'dbkey': 0})
+#+END_SRC
+
+#+BEGIN_SRC python :results silent :exports none
+from vasp import Vasp
+from vasp.vasprc import VASPRC
+import numpy as np
+VASPRC['queue.walltime'] = '24:00:00'
+
+# Fraction of equilibrium lattice constant to be calculated
+factor = np.append(np.arange(0.85, 1.2, 0.01),
+                   np.arange(1.2, 2.125, 0.05))
+factor = np.delete(factor, 15)
+
+bulk = Vasp('DFT/bulk=fcc/conv=None/factor=1.00')
+
+nrg, calcs = [], []
+for f in factor:
+    atoms = bulk.atoms.copy()
+
+    delta = np.array([[f, 0., 0.],
+                      [0., f, 0.],
+                      [0., 0., f]])
+    atoms.set_cell(np.dot(atoms.get_cell(), delta),
+                   scale_atoms=True)
+
+    calc = Vasp('./DFT/bulk=fcc/conv=None/factor={:.2f}'.format(f),
+                xc='pbe',
+                kpts=[16]*3,
+                encut=350,
+                nsw=0,
+                atoms=atoms)
+    calcs += [calc]
+    nrg += [calc.potential_energy]
+Vasp.stop_if(None in nrg)
+
+# Write all entries to database
+[calc.write2db('database/DFT.db', parser='=', keys={'dbkey': 0})
+ for calc in calcs]
+#+END_SRC
+
+#+BEGIN_SRC python :results silent :exports none
+from ase.db import connect
+import matplotlib.pyplot as plt
+from ase.utils.eos import EquationOfState
+from ase.units import kJ
+import numpy as np
+
+nrg, t, vol = [], [], []
+with connect('database/DFT.db') as db:
+    for d in db.select(['conv=None', 'factor<=1.2']):
+        nrg += [d.energy]
+        t += [d.data.ctime / 60.]
+        vol += [d.volume]
+vol = np.array(vol)
+nrg = np.array(nrg)
+t = np.array(t)
+
+# Fit the data to SJEOS
+eos = EquationOfState(vol, nrg)
+v0, e0, B = eos.fit()
+
+x = np.linspace(vol.min(), vol.max(), 250)
+
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.scatter(vol, nrg, color='b')
+ax.plot(x, eos.fit0(x**-(1.0 / 3)), 'k-')
+
+ax.set_xlim(vol.min(), vol.max())
+ax.set_ylabel('Potential energy (eV)', color='b')
+ax.tick_params(axis='y', colors='b')
+
+ax.text(vol.max() - 6, nrg.max(),
+	 'V$_{0}$={1:1.1f}'.format('{min}', v0),
+	 va='center', ha='left')
+ax.text(vol.max() - 6, nrg.max() - 0.3,
+	 'E$_{0}$={1:1.3f}'.format('{min}', e0),
+	 va='center', ha='left')
+ax.text(vol.max() - 6, nrg.max() - 0.6,
+	 'B={0:1.0f}'.format(B  / kJ * 1.0e24),
+	 va='center', ha='left')
+
+ax1 = ax.twinx()
+
+ax1.scatter(vol, t, color='r')
+ax1.set_ylabel('Calculation time (min)', color='r')
+ax1.set_xlim(vol.min(), vol.max())
+ax1.tick_params(axis='y', colors='r')
+ax1.set_ylim(0, 10)
+
+ax.set_xlabel('Volume ($\AA^{3}$/atom)')
+plt.tight_layout()
+plt.savefig('./images/eos.png')
+#+END_SRC
+
+* Neural network
+To train a neural network we will be using AMP (https://bitbucket.org/andrewpeterson/amp), a software package developed by the Peterson group at Brown University.
+
+Before we begin creating out neural network, we need to separate about 10% of out data into a validation set. This will be useful later, when determining whether over fitting has occurred. There is functionality for this in AMP, but it does not provide with as much control as the following code.
+
+#+BEGIN_SRC python :results silent :exports none
+from ase.db import connect
+import random
+import numpy as np
+
+db = connect('database/DFT.db')
+
+n_ids = []
+for d in db.select('conv=None'):
+    n_ids += [d.id]
+
+n = len(n_ids)
+n_train = int(round(n * 0.9))
+
+# This will pseudo-randomly select 10% of the calculations
+# Which is useful for reproducing our results.
+random.seed(256)
+train_samples = random.sample(n_ids, n_train)
+valid_samples = set(n_ids) - set(train_samples)
+
+db.update(list(train_samples), train_set=True)
+db.update(list(valid_samples), train_set=False)
+#+END_SRC
+
+Now we have sudo-randomly labeled 10% of our calculations for validation, and the rest are waiting to be trained in the new train.db file.
+
+** Training neural networks
+For all of out neural networks, we will be using the Behler-Parenello (BP) framework for distinguishing between geometries of atoms. Little to no work is published on how to systematically chose an appropriate number of variables for your BP framework, so we simply use the default settings in AMP for now. However, it is worth mentioning that a single G1 type variable (simplest possible descriptor) could be used to describe the fcc EOS, if that is all we are interested in.
+
+We also need to define a cutoff radius for our system which will determine the maximum distance that the BP framework considers atoms to be interacting. 6 $\AA$ is a typical value used in the literature for metals with no appreciable long range interactions, which we will be using here.
+
+Finally, it is also often desirable to have multiple neural networks which are trained to the same level of accuracy, but with different frameworks. These frameworks are determined by the number of nodes and hidden layers used. In general, we want the smallest number of nodes and layers possible to avoid the possibility of over fitting. However, too small a framework will be too rigid to properly fit complex potential energy surfaces.
+
+These jobs can be run locally:
+
+#+BEGIN_SRC python :results silent :exports none
+from amp import Amp
+from amp.descriptor import Gaussian
+from amp.regression import NeuralNetwork
+from amp import SimulatedAnnealing
+import os
+
+db = connect('database/DFT.db')
+
+images = []
+for d in db.select('train_set'):
+    atoms = db.get_atoms(d.id)
+    del atoms.constraints
+    images += [atoms]
+
+for n in [2, 3]:
+    wd = 'networks/db0/{0}-{0}/'.format(n)
+
+    if not os.path.exists(wd):
+        os.makedirs(wd)
+
+    calc = Amp(label=wd,
+               descriptor=Behler(cutoff=6.5),
+               regression=NeuralNetwork(hiddenlayers=(2, n)))
+
+    calc.train(images=images,
+               global_search=SimulatedAnnealing(temperature=70,
+                                                steps=50),
+               extend_variables=False) # Do not use this feature
+#+END_SRC
+
+#+BEGIN_SRC python :results silent :exports none
+from amp import Amp
+from amp.descriptor import Gaussian
+from amp.regression import NeuralNetwork
+import os
+
+db = connect('database/DFT.db')
+
+images = []
+for d in db.select('train_set'):
+    atoms = db.get_atoms(d.id)
+    del atoms.constraints
+    images += [atoms]
+
+for n in [2, 3]:
+    wd = 'networks/db0/{0}-{0}/'.format(n)
+
+    if not os.path.exists(wd):
+        os.makedirs(wd)
+
+    calc = Amp(label=wd,
+               descriptor=Behler(cutoff=6.5),
+               regression=NeuralNetwork(hiddenlayers=(2, n)))
+
+    calc.train(images=images,
+               cores=1,
+               global_search=None, # This is not useful for such a small NN
+               extend_variables=False) # Do not use this feature
+#+END_SRC
+
+We can also submit them to the queue on Gilgamesh:
+
+#+BEGIN_SRC python :results silent :exports none
+import os
+import subprocess
+import time
+
+home = os.getcwd()
+
+# We will try an iteration for 2 and 3 nodes with 2 hidden layers.
+for n in [2, 3]:
+
+    label = '{0}-{0}'.format(n)
+    wd = os.path.join(home, 'networks/db0/' + label)
+
+    if not os.path.exists(wd):
+        os.makedirs(wd)
+    os.chdir(wd)
+
+    run_amp = '''#!/usr/bin/env python
+from amp import Amp
+from amp.descriptor import *
+from amp.regression import *
+
+calc = Amp(label="./",
+           descriptor=Behler(cutoff=6.0),
+           regression=NeuralNetwork(hiddenlayers=(2, {0})))
+
+calc.train("./networks/db0/train.db", # The training data
+           cores=1,
+           global_search=None, # not found the simulated annealing feature useful
+           extend_variables=False) # feature does not work properly and will crash
+'''.format(n)
+
+    cmd = '''#!/bin/bash
+#PBS -N {0}
+#PBS -l nodes=1:ppn=1
+#PBS -l walltime=24:00:00
+#PBS -l mem=2GB
+#PBS -joe
+cd $PBS_O_WORKDIR
+./submit.py
+#end'''.format(wd)
+
+    with open('submit.py', 'w') as f:
+        f.write(run_amp)
+    os.chmod('submit.py', 0777)
+
+    with open('submit.sh', 'w') as f:
+        f.write(cmd)
+
+    subprocess.call(['qsub', 'submit.sh'])
+    time.sleep(5)
+    os.unlink('submit.sh')
+    os.chdir(wd)
+#+END_SRC
+
+Once the calculations finish we can check their convergence using the code below. These are trivial networks to train, so convergence should not be an issue. If there is a problem, restart the calculation to try again. This can be a difficult and time consuming part of the process for more complex system. 
+
+#+BEGIN_SRC python :results raw :exports none
+import os
+import json
+
+print('|Hidden layers|Iteration|Time|Cost Function|Energy RMSE|Force RMSE|')
+print('|-')
+
+for r, d, f in os.walk('networks/db0/'):
+    if 'train-log.txt' in f:
+        with open(os.path.join(r, 'train-log.txt'), 'r') as fi:
+            v = fi.readlines()[-3].split()
+
+    if 'trained-parameters.json' in f:
+        with open(os.path.join(r, 'trained-parameters.json'), 'r') as fi:
+            p = json.load(fi)
+        n = p['hiddenlayers']
+        print('|{0}|{1}|{2}|{3}|{4}|{5}|'.format(n, v[0], v[1], v[2], v[3], v[4]))
+#+END_SRC
+
+#+RESULTS:
+| Hidden layers   | Iteration | Time                | Cost Function | Energy RMSE | Force RMSE |
+|-----------------+-----------+---------------------+---------------+-------------+------------|
+| {u'Pd': [2, 2]} |       497 | 2015-11-18T15:59:22 |     8.921e-05 |   9.956e-04 |  0.000e+00 |
+| {u'Pd': [2, 3]} |       266 | 2015-11-18T15:59:34 |     8.967e-05 |   9.982e-04 |  0.000e+00 |
+
+The single atom unit cell enforces perfect symmetry. This results in cancellation of forces on the atom in the unit cell. Hence, force RMSE = 0.0, which makes for fast training, but less information to train too.
+
+** Validation of the network
+Now we need to validate our results to ensure that no over fitting has occurred. First, we will look at the residuals to the training and validation data. Then we will see if the neural networks perform well for their intended purpose. For ease of access, we will add the neural network energy predictions to the database for each structure.
+
+#+BEGIN_SRC python :result silent :exports none
+from ase.db import connect
+from amp import Amp
+
+db = connect('./networks/db0/data.db')
+
+calc2 = Amp('./networks/db0/2-2/')
+calc3 = Amp('./networks/db0/3-3/')
+
+for d in db.select():
+    atoms = db.get_atoms(d.id)
+    atoms.set_calculator(calc2)
+    nrg2 = atoms.get_potential_energy()
+
+    atoms.set_calculator(calc3)
+    nrg3 = atoms.get_potential_energy()
+
+    db.update(d.id, NN2=nrg2, NN3=nrg3)
+#+END_SRC
+
+*** Analysis of residuals
+First we look at the residual errors of all the data in the database for each of our frameworks shown in Figure ref:fig-residuals-1. For both fits, the validation set has lower RMSE than the training set. This is a good indication that neither has been over fit, which we can also observe for this simple example, since the validation points follow the same trends observed for the training set data. This is also a good example of how adding additional, unnecessary elements to the framework leads to lower overall fitting accuracy.
+
+#+label: fig-residuals-1
+#+caption: Residual errors to the 2-2 and 3-3 framework neural network.
+#+attr_latex: :width 6in
+#+attr_org: :width 800
+[[./images/residuals-1.png]]
+
+#+BEGIN_SRC python :results silent :exports none
+import numpy as np
+import matplotlib.pyplot as plt
+from ase.db import connect
+from amp import Amp
+import os
+
+db = connect('./networks/db0/data.db')
+
+f, ax = plt.subplots(1, 2, sharey=True, figsize=(8, 4))
+
+for i, n in enumerate([2, 3]):
+
+    Qe, Ne, var, ind = [], [], [], []
+    for d in db.select():
+
+        Qe += [d.energy / d.natoms]
+        var += [d.id]
+
+        Ne += [d['NN{0}'.format(n)] / d.natoms]
+        ind += [d.train_set]
+
+    res = np.array(Ne) - np.array(Qe)
+    mask = np.array(ind)
+    valid = np.ma.masked_array(res, mask)
+    train = np.ma.masked_array(res, ~mask)
+    vRMSE = np.sqrt(np.sum(valid ** 2)/ len(valid))
+    tRMSE = np.sqrt(np.sum(train ** 2)/ len(train))
+
+    ax[i].text(5, -0.0075,
+               'Trained RMSE: {0:1.2f} meV/atom'.format(tRMSE * 1000),
+               color='b', ha='left')
+    ax[i].text(5, -0.009,
+               'Validation RMSE: {0:1.2f} meV/atom'.format(vRMSE * 1000),
+               color='r', ha='left')
+
+    ax[i].scatter(var, train, color='b')
+    ax[i].scatter(var, valid, color='r')
+    ax[i].plot([min(var), max(var)], [0, 0], 'k--')
+    ax[i].set_xlim(min(var), max(var))
+    ax[i].set_title('8-{0}-{0}-1 framework'.format(n))
+    ax[i].set_xlabel('Calculation ID')
+
+ax[0].set_ylim(-0.01, 0.01)
+ax[0].set_ylabel('Residual error (eV/atom)')
+plt.tight_layout(w_pad=-0.8)
+plt.savefig('./images/residuals-1.png')
+#+END_SRC
+
+*** Recreate the equation of state
+Next, we recreate the equation of state using both of the neural networks and the same methodology as with DFT. The results are shown in Figures ref:fig-eos-NN2 and ref:fig-eos-NN3 for the 2-2 and 3-3 frameworks, respectively.
+
+#+label: fig-eos-NN2
+#+caption: Equation of state for fcc Pd as calculated from a neural network with 2-2 framework.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/eos-NN2.png]]
+
+#+label: fig-eos-NN3
+#+caption: Equation of state for fcc Pd as calculated from a neural network with 3-3 framework.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/eos-NN3.png]]
+
+Each neural network creates an excellent fit to the DFT data, and we see that the calculation speed has improved by up to 6 orders of magnitude in the most extreme cases. For this application the choice of framework seems to have little effect on the equation of state produced.
+
+#+BEGIN_SRC python :results silent :exports none
+import numpy as np
+import matplotlib.pyplot as plt
+from ase.utils.eos import EquationOfState
+from ase.db import connect
+from amp import Amp
+from ase.visualize import view
+import os
+import json
+import time
+from ase.units import kJ
+
+db = connect('./networks/db0/data.db')
+
+for r, d, f in os.walk('./networks/db0/'):
+    if 'trained-parameters.json' in f:
+        calc = Amp(load=r + '/')
+
+        with open(os.path.join(r, 'trained-parameters.json'), 'r') as fi:
+            p = json.load(fi)
+        n = p['hiddenlayers'].values()[0]
+
+        nrg, vol, t = [], [], []
+        for d in db.select():
+            atoms = db.get_atoms(d.id)
+            atoms.set_calculator(calc)
+
+            time1 = time.time()
+            energy = atoms.get_potential_energy()
+            time2 = time.time()
+
+            nrg += [energy]
+            vol += [d.volume]
+            t += [(time2 - time1) * 1000]
+
+        min_nrg = vol[nrg.index(min(nrg))]
+        ind = (np.array(vol) > min_nrg - 15) & (np.array(vol) < min_nrg + 15)
+        vol = np.array(vol)[ind]
+        nrg = np.array(nrg)[ind]
+        t = np.array(t)[ind]
+
+        # Fit the data to SJEOS
+        eos = EquationOfState(vol, nrg)
+        v0, e0, B, fit = eos.fit()
+
+        x = np.linspace(vol.min(), vol.max(), 250)
+
+        fig = plt.figure(figsize=(6, 4))
+        ax1 = fig.add_subplot(111)
+        ax1.scatter(vol, nrg, color='b')
+        ax1.plot(x, fit(x**-(1.0 / 3)), 'k-')
+
+        ax1.set_xlim(vol.min(), vol.max())
+        ax1.set_ylabel('Potential energy (eV)', color='b')
+        ax1.tick_params(axis='y', colors='b')
+
+        ax1.text(vol.max() - 6, nrg.max(),
+                 'V$_{0}$={1:1.1f}'.format('{min}', v0),
+                 va='center', ha='left')
+        ax1.text(vol.max() - 6, nrg.max() - 0.3,
+                 'E$_{0}$={1:1.3f}'.format('{min}', e0),
+                 va='center', ha='left')
+        ax1.text(vol.max() - 6, nrg.max() - 0.6,
+                 'B={0:1.0f}'.format(B  / kJ * 1.0e24),
+                 va='center', ha='left')
+
+        ax2 = ax1.twinx()
+
+        ax2.scatter(vol, t, color='r')
+        ax2.set_ylabel('Calculation time (milliseconds)', color='r')
+        ax2.set_xlim(vol.min(), vol.max())
+        ax2.tick_params(axis='y', colors='r')
+        ax2.set_ylim(0, 40)
+
+        ax1.set_xlabel('Volume ($\AA^{3}$/atom)')
+        plt.tight_layout()
+        plt.savefig('./images/eos-NN{0}.png'.format(n[-1]))
+#+END_SRC
+
+** Applications
+Now we can try and apply our neural networks to things it was not fit to.
+
+For this, we will use or two neural networks jointly which will save us a good amount of time validating the networks as we begin to extrapolate. This is demonstrated in the next section. 
+
+*** Geometry optimization
+First, we expand the region of equation of state to see how well it extrapolates. In Figure ref:fig-app-eos, we expand the region of the original equation of state beyond the black dashed lines.
+
+#+label: fig-app-eos
+#+caption: Expansion of the equation of state beyond the region incorporated into the training set.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/app-eos.png]]
+
+At extreme stretch (factor > 2.07%) both neural networks agree because we have trained it nearly to the cutoff radius of 6.0 $\AA$.
+
+As soon as we strain the lattice below the trained region, the network predictions quickly diverge. This indicates that the training set is not useful for predictions in this region.
+
+We performed 1,000 calculations to produce this figure. To have validated all 1,000 points with DFT would be too time consuming. Instead, we rely on disagreement between neural networks with different framework to probe poorly fitted regions.
+
+#+BEGIN_SRC python :results silent :exports none
+from amp import Amp
+import numpy as np
+from ase.lattice.cubic import FaceCenteredCubic
+import matplotlib.pyplot as plt
+import collections
+
+D = {}
+for calc in ['./networks/db0/2-2/',
+             './networks/db0/3-3/']:
+
+    D[calc[-2]] = collections.OrderedDict()
+    for x in np.linspace(0.60, 2.5, 1000.):
+
+        atoms = FaceCenteredCubic('Pd',
+                                  directions=[[0, 1, 1],
+                                              [1, 0, 1],
+                                              [1, 1, 0]],
+                                  latticeconstant=3.939)
+
+        delta = np.array([[x, 0., 0.],
+                          [0., x, 0.],
+                          [0., 0., x]])
+        atoms.set_cell(np.dot(atoms.get_cell(), delta),
+                       scale_atoms=True)
+
+        atoms.set_calculator(Amp(calc))
+
+        D[calc[-2]][x] = atoms.get_potential_energy()
+
+res = abs(np.array(D['3'].values()) - np.array(D['2'].values()))
+
+f, ax = plt.subplots(2, 1, sharex=True)
+ax[0].plot(D['2'].keys(), D['2'].values(), 'b', lw=2, label='2-2')
+ax[0].plot(D['3'].keys(), D['3'].values(), 'r', lw=2, label='3-3')
+ax[0].plot([0.85, 0.85], [2, -6], 'k--')
+ax[0].plot([2.07, 2.07], [2, -6], 'k--')
+ax[0].set_ylabel('Potential energy (eV)')
+ax[0].set_xlim(0.6, 2.5)
+ax[0].legend(loc='best')
+
+ax[1].plot([0.85, 0.85], [0, 1.8], 'k--')
+ax[1].plot([2.07, 2.07], [0, 1.8], 'k--')
+ax[1].plot(D['2'].keys(), res, 'k', lw=2)
+ax[1].set_ylabel('NN energy difference (eV)')
+ax[1].set_ylim(0, 1.8)
+ax[1].set_xlabel('Strain/stretch factor (%)')
+plt.tight_layout(w_pad=0.0)
+plt.savefig('./images/app-eos.png')
+#+END_SRC
+
+*** More complex calculations
+Here we attempt to calculate the vacancy formation energy for fcc Pd. This is calculated as shown in Equation ref:eqn-vac.
+
+\begin{eqnarray}
+E_v = E_f - \frac{n_i - 1}{n_i} E_i \label{eqn-vac}
+\end{eqnarray}
+
+from the literature cite:mattsson-2002-calcul, we know that DFT-GGA should predict a vacancy formation energy of about 1.50 eV.
+
+- Vacancy formation energy with 2-2 framework NN: 4.170 eV
+
+- Vacancy formation energy with 3-3 framework NN: 0.411 eV
+
+neither network does a good job predicting the vacancy formation energy. This is because the networks do not know how to calculate the energy of an fcc lattice with a missing atom.
+
+#+BEGIN_SRC python :results raw :exports none
+from amp import Amp
+import numpy as np
+from ase.lattice.cubic import FaceCenteredCubic
+import matplotlib.pyplot as plt
+from ase.visualize import view
+from ase.optimize import BFGS
+
+for calc in ['./networks/db0/2-2/',
+             './networks/db0/3-3/']:
+    atoms = FaceCenteredCubic('Pd',
+                              directions=[[0, 1, 1],
+                                          [1, 0, 1],
+                                          [1, 1, 0]],
+                              latticeconstant=3.939)
+    atoms.set_calculator(Amp(calc))
+    atoms *= (3, 3, 3)
+
+    nrg0 = atoms.get_potential_energy()
+
+    del atoms[0]
+    dyn = BFGS(atoms)
+    dyn.run(fmax=0.05)
+
+    nrg1 = atoms.get_potential_energy()
+    fw = calc.split('/')[-2]
+    ve = nrg1 - (26/27.)*nrg0
+
+    print 'Vacancy formation energy with {0} framework NN: {1:1.3f} eV'.format(fw, ve)
+#+END_SRC
+
+#+RESULTS:
+BFGS:   0  23:22:14     -131.319326       0.6402
+BFGS:   1  23:22:19     -131.359079       0.4868
+BFGS:   2  23:22:24     -131.407465       0.1290
+BFGS:   3  23:22:29     -131.408432       0.1178
+BFGS:   4  23:22:34     -131.409158       0.0511
+BFGS:   5  23:22:39     -131.406953       0.0411
+Vacancy formation energy with 2-2 framework NN: 4.170 eV
+BFGS:   0  23:22:44     -135.182786       0.0558
+BFGS:   1  23:22:49     -135.182910       0.0554
+BFGS:   2  23:22:54     -135.183387       0.0320
+Vacancy formation energy with 3-3 framework NN: 0.411 eV
+
+*** Molecular dynamics
+Finally, we try an MD simulation. In Figure ref:fig-MD1 we begin with a 3 \times 3 \times 3 primitive unit cell of Pd and add a random amount of kinetic energy to each of the 27 atoms in the system. We then use the forces on those atoms to determine where they will be after a small forward step in time (5 fs). Then, we use the BPNN to calculate the energy and forces on the perturbed system and repeat for 200 time steps.
+
+#+BEGIN_SRC python :results silent :exports none
+from __future__ import print_function
+from ase.lattice.cubic import FaceCenteredCubic
+from ase.md.langevin import Langevin
+from ase.io.trajectory import Trajectory
+from ase import units
+from amp import Amp
+
+# Set up a crystal
+atoms = FaceCenteredCubic('Pd',
+                          directions=[[0, 1, 1],
+                                      [1, 0, 1],
+                                      [1, 1, 0]],
+                          latticeconstant=3.939,
+                          size=(3, 3, 3))
+
+# Describe the interatomic interactions with the Effective Medium Theory
+atoms.set_calculator(Amp('./networks/db0/2-2/'))
+
+# We want to run MD with constant energy using the Langevin algorithm
+# with a time step of 5 fs, the temperature T and the friction
+# coefficient to 0.02 atomic units.
+dyn = Langevin(atoms, 5 * units.fs, 900 * units.kB, 0.002)
+
+
+def printenergy(a=atoms):  # store a reference to atoms in the definition.
+    """Function to print the potential, kinetic and total energy."""
+    epot = a.get_potential_energy() / len(a)
+    ekin = a.get_kinetic_energy() / len(a)
+    
+dyn.attach(printenergy, interval=10)
+
+# We also want to save the positions of all atoms after every time step.
+traj = Trajectory('./networks/db1/MD.traj', 'w', atoms)
+dyn.attach(traj.write, interval=10)
+
+# Now run the dynamics
+dyn.run(2000)
+#+END_SRC
+
+In Figure ref:fig-MD1, the NN energy and corresponding DFT energy of every 4th step is shown. Although the NN predicts the upward trend in energy correctly, the residuals are quite large. This is likely not an acceptable level of error for most applications.
+
+#+label: fig-MD1
+#+caption: Molecular dynamic simulation of a 3 \times 3 \times 3 primitive Pd fcc unit cell. First iteration of 2-2 framework predictions.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/MD.png]]
+
+#+BEGIN_SRC python :results silent :exports none
+from ase.io.trajectory import Trajectory
+import numpy as np
+from jasp import *
+import matplotlib.pyplot as plt
+import jbtools.gilgamesh as jb
+JASPRC['queue.walltime'] = '24:00:00'
+
+ready = True
+Ne, nrg, res, s = [], [], [], []
+for i, atoms in enumerate(Trajectory('./networks/db0/MD.traj', 'r')):
+
+    Ne += [atoms.get_potential_energy()]
+
+    if (i + 1) % 4 == 0:
+
+        s += [i]
+
+        with jasp('DFT/structure=fcc/convergence=None/factor=None/MD={0}'.format(int(i)),
+                  xc='PBE',
+                  kpts=(5, 5, 5),
+                  encut=400,
+                  ibrion=-1,
+                  atoms=atoms) as calc:
+            try:
+                atoms = calc.get_atoms()
+                nrg += [atoms.get_potential_energy()]
+                res += [abs(Ne[-1] - nrg[-1])]
+            except(VaspQueued, VaspSubmitted):
+                ready = False
+
+if ready:
+    # Here we collect the data to an ASE database
+    # for easy future manipulation
+    jb.write_database('./DFT/structure=fcc/convergence=None/',
+                      db='./networks/db1/data.db')
+
+    fig = plt.figure(figsize=(6, 4))
+    ax1 = fig.add_subplot(111)
+    ax1.plot(range(len(Ne)), Ne, 'b-', label='NN prediction')
+    ax1.scatter(s, nrg, facecolor='none',
+                edgecolor='b', label='DFT prediction')
+
+    ax1.set_xlim(min(s), max(s))
+    ax1.set_ylabel('Potential energy (eV)', color='b')
+    ax1.tick_params(axis='y', colors='b')
+    ax1.set_ylim(-141, -136)
+    ax1.set_xlabel('Time step')
+    ax1.legend(loc=2)
+
+    ax2 = ax1.twinx()
+
+    ax2.scatter(s, res, color='r')
+    ax2.set_ylabel('Absolute residual error (eV)', color='r')
+    ax2.set_xlim(min(s), max(s))
+    ax2.tick_params(axis='y', colors='r')
+    ax2.set_ylim(0, 5.0)
+
+    plt.tight_layout()
+    plt.savefig('./images/MD.png')
+#+END_SRC
+
+* Teaching the neural network
+** New training set
+Here we perform a second iteration of the neural network. Now we will include the DFT validation calculations on the MD simulation shown in Figure ref:fig-MD1. The first two sections are repetitions of previous training code shown above.
+
+#+BEGIN_SRC python :results silent :exports none
+from ase.db import connect
+import os
+import random
+import numpy as np
+
+db = connect('./networks/db1/data.db')
+
+n = db.count()
+n_train = int(round(n * 0.9))
+
+n_ids =  np.array(range(n)) + 1
+
+# This will sudo-randomly select 10% of the calculations
+# Which is useful for reproducing our results.
+random.seed(256)
+train_samples = random.sample(n_ids, n_train)
+valid_samples = set(n_ids) - set(train_samples)
+
+db.update(list(train_samples), train_set=True)
+db.update(list(valid_samples), train_set=False)
+
+with connect('./networks/db1/train.db') as db0:
+    for d in db.select(['train_set=True']):
+        db0.write(d, key_value_pairs=d.key_value_pairs)
+#+END_SRC
+
+** Training new network
+Training the second networks took significantly longer since we are no longer training such simple structures. There is now a need for more than one descriptor to define the system. However, 8 descriptors is the default for a single element.
+
+#+BEGIN_SRC python :results silent :exports none
+import os
+import subprocess
+import time
+
+home = os.getcwd()
+
+# We will try an iteration for 2 and 3 nodes with 2 hidden layers.
+for n in [2, 3]:
+
+    label = '{0}-{0}'.format(n)
+    wd = os.path.join(home, 'networks/db1/' + label)
+
+    if not os.path.exists(wd):
+        os.makedirs(wd)
+    os.chdir(wd)
+
+    run_amp = '''#!/usr/bin/env python
+from amp import Amp
+from amp.descriptor import *
+from amp.regression import *
+
+calc = Amp(label="./",
+           descriptor=Behler(cutoff=6.0),
+           regression=NeuralNetwork(hiddenlayers=(2, {0})))
+
+calc.train("../train.db", # The training data
+           cores=1,
+           global_search=None, # not found the simulated annealing feature useful
+           extend_variables=False) # feature does not work properly and will crash
+'''.format(n)
+
+    cmd = '''#!/bin/bash
+#PBS -N {0}
+#PBS -l nodes=1:ppn=1
+#PBS -l walltime=24:00:00
+#PBS -l mem=2GB
+#PBS -joe
+cd $PBS_O_WORKDIR
+./submit.py
+#end'''.format(wd)
+
+    with open('submit.py', 'w') as f:
+        f.write(run_amp)
+    os.chmod('submit.py', 0777)
+
+    with open('submit.sh', 'w') as f:
+        f.write(cmd)
+
+    subprocess.call(['qsub', 'submit.sh'])
+    time.sleep(5)
+    os.unlink('submit.sh')
+    os.chdir(wd)
+#+END_SRC
+
+#+BEGIN_SRC python :results raw :exports none
+import os
+import json
+
+print('|Hidden layers|Iteration|Time|Cost Function|Energy RMSE|Force RMSE|')
+print('|-')
+
+for r, d, f in os.walk('networks/db1/'):
+    if 'train-log.txt' in f:
+        with open(os.path.join(r, 'train-log.txt'), 'r') as fi:
+            v = fi.readlines()[-5].split()
+
+    if 'trained-parameters.json' in f:
+        with open(os.path.join(r, 'trained-parameters.json'), 'r') as fi:
+            p = json.load(fi)
+        n = p['hiddenlayers']
+        print('|{0}|{1}|{2}|{3}|{4}|{5}|'.format(n, v[0], v[1], v[2], v[3], v[4]))
+#+END_SRC
+
+#+RESULTS:
+| Hidden layers   | Iteration | Time                | Cost Function | Energy RMSE | Force RMSE |
+|-----------------+-----------+---------------------+---------------+-------------+------------|
+| {u'Pd': [2, 2]} |      6544 | 2015-12-05T21:56:51 |     4.936e-02 |   3.080e-03 |  9.436e-02 |
+| {u'Pd': [2, 3]} |      3494 | 2015-12-02T13:06:09 |     4.905e-02 |   3.131e-03 |  9.401e-02 |
+
+*** Network validation
+Since volume is no longer a good description of all structures in our data set, we will simply perform validation of residuals errors based on calculation IDs.
+
+#+BEGIN_SRC python :result silent :exports none
+from ase.db import connect
+from amp import Amp
+
+db = connect('./networks/db1/data.db')
+
+calc2 = Amp('./networks/db1/2-2/')
+calc3 = Amp('./networks/db1/3-3/')
+
+for d in db.select():
+    atoms = db.get_atoms(d.id)
+    atoms.set_calculator(calc2)
+    nrg2 = atoms.get_potential_energy()
+
+    atoms.set_calculator(calc3)
+    nrg3 = atoms.get_potential_energy()
+
+    db.update(d.id, NN2=nrg2, NN3=nrg3)
+#+END_SRC
+
+Figure ref:fig-residuals-2 shows that the second iteration of the fit is not as accurate as the first. This is because we have expanded the scope of the potential energy surface we are trying to fit to. Additional accuracy can be obtained by further sampling of similar structures, in this region of the potential energy surface. For most current applications with NN, an RMSE of $\approx$ 3 meV/atom is considered to be more than sufficient.
+
+#+label: fig-residuals-2
+#+caption: Residual errors to the 2-2 and 3-3 framework neural network after the second iteration of training. Calculation numbers greater than 100 are the MD trajectory structures.
+#+attr_latex: :width 6in
+#+attr_org: :width 800
+[[./images/residuals-2.png]]
+
+#+BEGIN_SRC python :results silent :exports none
+import numpy as np
+import matplotlib.pyplot as plt
+from ase.db import connect
+from amp import Amp
+import os
+
+db = connect('./networks/db1/data.db')
+
+f, ax = plt.subplots(1, 2, sharey=True, figsize=(8, 4))
+
+for i, n in enumerate([2, 3]):
+
+    Qe, Ne, var, ind = [], [], [], []
+    for d in db.select():
+
+        Qe += [d.energy / d.natoms]
+        var += [d.id]
+
+        Ne += [d['NN{0}'.format(n)] / d.natoms]
+        ind += [d.train_set]
+
+    res = np.array(Ne) - np.array(Qe)
+    mask = np.array(ind)
+    valid = np.ma.masked_array(res, mask)
+    train = np.ma.masked_array(res, ~mask)
+    vRMSE = np.sqrt(np.sum(valid ** 2)/ len(valid))
+    tRMSE = np.sqrt(np.sum(train ** 2)/ len(train))
+
+    ax[i].text(5, -0.015,
+               'Trained RMSE: {0:1.2f} meV/atom'.format(tRMSE * 1000),
+               color='b', ha='left')
+    ax[i].text(5, -0.018,
+               'Validation RMSE: {0:1.2f} meV/atom'.format(vRMSE * 1000),
+               color='r', ha='left')
+
+    ax[i].scatter(var, train, color='b')
+    ax[i].scatter(var, valid, color='r')
+    ax[i].plot([min(var), max(var)], [0, 0], 'k--')
+    ax[i].set_xlim(min(var), max(var))
+    ax[i].set_title('8-{0}-{0}-1 framework'.format(n))
+    ax[i].set_xlabel('Calculation ID')
+
+ax[0].set_ylim(-0.02, 0.02)
+ax[0].set_ylabel('Residual error (eV/atom)')
+plt.tight_layout(w_pad=0)
+plt.savefig('./images/residuals-2.png')
+#+END_SRC
+
+** Attempt 2 with MD simulation
+If we re-calculate the energy of the MD trajectory from Figure ref:fig-MD1, we can see in Figure ref:fig-MD2 that the predictions are greatly improved. Note that the scale of absolute residuals on the right is an order of magnitude lower than before.
+
+Normalizing these residuals on a per atom basis gives absolute residuals errors below 5 meV/atom. This is considered an acceptable level of error for most applications in the literature, but will not be sufficient for all purposes still. Training large systems of atoms to even higher levels of accuracy will become quite difficult since AMP works on a cost function normalized by the number of atoms in each system. This preferentially results in lower levels of absolute residual error for small systems.
+
+#+label: fig-MD2
+#+caption: Molecular dynamic simulation of a 3 \times 3 \times 3 primitive Pd fcc unit cell. Second iteration of 2-2 framework predictions.
+#+attr_latex: :width 6in
+#+attr_org: :width 600
+[[./images/MD2.png]]
+
+#+BEGIN_SRC python :results silent :exports none
+from amp import Amp
+from ase.io.trajectory import Trajectory
+import numpy as np
+from ase.db import connect
+import matplotlib.pyplot as plt
+
+db = connect('./networks/db1/data.db')
+
+Ne = []
+for i, atoms in enumerate(Trajectory('./networks/db0/MD.traj', 'r')):
+
+    atoms.set_calculator(Amp('./networks/db1/2-2/'))
+    Ne += [atoms.get_potential_energy()]
+
+Qe = []
+for d in db.select('MD'):
+
+    res = abs(Ne[d.MD] - d.energy)
+    Qe += [[d.MD, d.energy, res]]
+
+Qe.sort(key=lambda x:x[0])
+Qe = np.array(Qe).T
+
+fig = plt.figure(figsize=(6, 4))
+ax1 = fig.add_subplot(111)
+ax1.plot(range(len(Ne)), Ne, 'b-', label='NN prediction')
+ax1.scatter(Qe[0], Qe[1], facecolor='none', edgecolor='b', label='DFT prediction')
+
+ax1.set_xlim(min(Qe[0]), max(Qe[0]))
+ax1.set_ylabel('Potential energy (eV)', color='b')
+ax1.tick_params(axis='y', colors='b')
+ax1.set_ylim(-141, -136)
+ax1.set_xlabel('Time step')
+ax1.legend(loc=2)
+
+ax2 = ax1.twinx()
+
+ax2.scatter(Qe[0], Qe[2], color='r')
+ax2.set_ylabel('Absolute residual error (eV)', color='r')
+ax2.set_xlim(min(Qe[0]), max(Qe[0]))
+ax2.tick_params(axis='y', colors='r')
+ax2.set_ylim(0, 0.5)
+
+plt.tight_layout()
+plt.savefig('./images/MD2.png')
+#+END_SRC
+
+bibliographystyle:unsrt
+bibliography:./bibliography.bib
