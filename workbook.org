@@ -139,7 +139,7 @@ Vasp.stop_if(None in nrg)
 # Write all entries to database
 if not os.path.exists('database/'):
     os.makedirs('database/')
-[calc.write2db('database/DFT.db', parser='=') for calc in calcs]
+[calc.write2db('database/master.db', parser='=') for calc in calcs]
 #+END_SRC
 
 #+BEGIN_SRC python :results silent :exports none
@@ -148,7 +148,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 nrg, t, kpts = [], [], []
-with connect('database/DFT.db') as db:
+with connect('database/master.db') as db:
     for d in db.select('conv=kpts'):
         nrg += [d.energy]
         t += [d.data.ctime / 60.]
@@ -217,7 +217,7 @@ nrg = [calc.potential_energy for calc in calcs]
 Vasp.stop_if(None in nrg)
 
 # Write all entries to database
-[calc.write2db('database/DFT.db', parser='=')
+[calc.write2db('database/master.db', parser='=')
  for calc in calcs]
 #+END_SRC
 
@@ -227,7 +227,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 nrg, t, encut = [], [], []
-with connect('database/DFT.db') as db:
+with connect('database/master.db') as db:
     for d in db.select('conv=encut'):
         nrg += [d.energy]
         t += [d.data.ctime / 60.]
@@ -292,7 +292,7 @@ calc = Vasp('DFT/bulk=fcc/conv=None/factor=1.00',
             atoms=atoms)
 nrg = calc.potential_energy
 Vasp.stop_if(nrg is None)
-calc.write2db('database/DFT.db', parser='=', keys={'dbkey': 0})
+calc.write2db('database/master.db', parser='=', keys={'dbkey': 0})
 #+END_SRC
 
 #+BEGIN_SRC python :results silent :exports none
@@ -329,7 +329,7 @@ for f in factor:
 Vasp.stop_if(None in nrg)
 
 # Write all entries to database
-[calc.write2db('database/DFT.db', parser='=', keys={'dbkey': 0})
+[calc.write2db('database/master.db', parser='=', keys={'dbkey': 0})
  for calc in calcs]
 #+END_SRC
 
@@ -341,7 +341,7 @@ from ase.units import kJ
 import numpy as np
 
 nrg, t, vol = [], [], []
-with connect('database/DFT.db') as db:
+with connect('database/master.db') as db:
     for d in db.select(['conv=None', 'factor<=1.2']):
         nrg += [d.energy]
         t += [d.data.ctime / 60.]
@@ -397,10 +397,10 @@ from ase.db import connect
 import random
 import numpy as np
 
-db = connect('database/DFT.db')
+db = connect('database/master.db')
 
 n_ids = []
-for d in db.select('conv=None'):
+for d in db.select('dbkey=0'):
     n_ids += [d.id]
 
 n = len(n_ids)
@@ -431,13 +431,14 @@ These jobs can be run locally:
 from amp import Amp
 from amp.descriptor import Gaussian
 from amp.regression import NeuralNetwork
+from ase.db import connect
 from amp import SimulatedAnnealing
 import os
 
-db = connect('database/DFT.db')
+db = connect('database/master.db')
 
 images = []
-for d in db.select('train_set'):
+for d in db.select('train_set=True'):
     atoms = db.get_atoms(d.id)
     del atoms.constraints
     images += [atoms]
@@ -449,25 +450,34 @@ for n in [2, 3]:
         os.makedirs(wd)
 
     calc = Amp(label=wd,
-               descriptor=Behler(cutoff=6.5),
+               dblabel='networks/',
+               descriptor=Gaussian(cutoff=6.5),
                regression=NeuralNetwork(hiddenlayers=(2, n)))
 
     calc.train(images=images,
+               data_format='db',
+               cores=1,
+               energy_goal=10,  # 
+               force_goal=None,  # There are no forces in the training data
                global_search=SimulatedAnnealing(temperature=70,
                                                 steps=50),
                extend_variables=False) # Do not use this feature
+
+    # Note: This will not work without the jboes version of AMP
+    os.unlink(os.path.join(wd, 'log.txt'))
+    os.unlink(os.path.join(wd, 'trained-parameters.json'))
 #+END_SRC
+
+For the sake of reproducibility. I have separately generated a starting point above for both framework. Now, I use the initial guess previously found to initiate the fitting process:
 
 #+BEGIN_SRC python :results silent :exports none
 from amp import Amp
-from amp.descriptor import Gaussian
-from amp.regression import NeuralNetwork
-import os
+from ase.db import connect
 
-db = connect('database/DFT.db')
+db = connect('database/master.db')
 
 images = []
-for d in db.select('train_set'):
+for d in db.select('train_set=True'):
     atoms = db.get_atoms(d.id)
     del atoms.constraints
     images += [atoms]
@@ -475,16 +485,16 @@ for d in db.select('train_set'):
 for n in [2, 3]:
     wd = 'networks/db0/{0}-{0}/'.format(n)
 
-    if not os.path.exists(wd):
-        os.makedirs(wd)
-
-    calc = Amp(label=wd,
-               descriptor=Behler(cutoff=6.5),
-               regression=NeuralNetwork(hiddenlayers=(2, n)))
+    calc = Amp(load=os.path.join(wd, 'initial-parameters.json'),
+               label=wd,
+               dblabel='networks/')
 
     calc.train(images=images,
+               data_format='db',
                cores=1,
-               global_search=None, # This is not useful for such a small NN
+               energy_goal=1e-3,  # The default energy training goal
+               force_goal=None,  # There are no forces in the training data
+               global_search=None,  # Already have a good starting point
                extend_variables=False) # Do not use this feature
 #+END_SRC
 
@@ -507,20 +517,38 @@ for n in [2, 3]:
         os.makedirs(wd)
     os.chdir(wd)
 
-    run_amp = '''#!/usr/bin/env python
+    run_amp = """#!/usr/bin/env python
 from amp import Amp
-from amp.descriptor import *
-from amp.regression import *
+from amp.descriptor import Gaussian
+from amp.regression import NeuralNetwork
+from ase.db import connect
+from amp import SimulatedAnnealing
+import os
 
-calc = Amp(label="./",
-           descriptor=Behler(cutoff=6.0),
-           regression=NeuralNetwork(hiddenlayers=(2, {0})))
+db = connect('../../../database/master.db')
 
-calc.train("./networks/db0/train.db", # The training data
-           cores=1,
-           global_search=None, # not found the simulated annealing feature useful
-           extend_variables=False) # feature does not work properly and will crash
-'''.format(n)
+images = []
+for d in db.select('train_set=True'):
+    atoms = db.get_atoms(d.id)
+    del atoms.constraints
+    images += [atoms]
+
+for n in [2, 3]:
+
+    calc = Amp(label='./',
+               dblabel='../../',
+               descriptor=Gaussian(cutoff=6.5),
+               regression=NeuralNetwork(hiddenlayers=(2, n)))
+
+    calc.train(images=images,
+               data_format='db',
+               cores=1,
+               energy_goal=1e-3,
+               force_goal=None,
+               global_search=SimulatedAnnealing(temperature=70,
+                                                steps=50),
+               extend_variables=False)
+""".format(n)
 
     cmd = '''#!/bin/bash
 #PBS -N {0}
@@ -545,43 +573,43 @@ cd $PBS_O_WORKDIR
     os.chdir(wd)
 #+END_SRC
 
-Once the calculations finish we can check their convergence using the code below. These are trivial networks to train, so convergence should not be an issue. If there is a problem, restart the calculation to try again. This can be a difficult and time consuming part of the process for more complex system. 
+Once the calculations finish we can check their convergence using the code below. These are trivial networks to train, so convergence should not be an issue.  This can be a difficult and time consuming part of the process for more complex system. 
 
 #+BEGIN_SRC python :results raw :exports none
 import os
 import json
 
-print('|Hidden layers|Iteration|Time|Cost Function|Energy RMSE|Force RMSE|')
+print('|Hidden layers|Iteration|Time|Cost Function|Energy RMSE|')
 print('|-')
 
 for r, d, f in os.walk('networks/db0/'):
-    if 'train-log.txt' in f:
-        with open(os.path.join(r, 'train-log.txt'), 'r') as fi:
+    if 'log.txt' in f:
+        with open(os.path.join(r, 'log.txt'), 'r') as fi:
             v = fi.readlines()[-3].split()
 
     if 'trained-parameters.json' in f:
         with open(os.path.join(r, 'trained-parameters.json'), 'r') as fi:
             p = json.load(fi)
         n = p['hiddenlayers']
-        print('|{0}|{1}|{2}|{3}|{4}|{5}|'.format(n, v[0], v[1], v[2], v[3], v[4]))
+        print('|{}|{}|{}|{}|{}|'.format(n, v[0], v[1], v[2], v[3]))
 #+END_SRC
 
 #+RESULTS:
-| Hidden layers   | Iteration | Time                | Cost Function | Energy RMSE | Force RMSE |
-|-----------------+-----------+---------------------+---------------+-------------+------------|
-| {u'Pd': [2, 2]} |       497 | 2015-11-18T15:59:22 |     8.921e-05 |   9.956e-04 |  0.000e+00 |
-| {u'Pd': [2, 3]} |       266 | 2015-11-18T15:59:34 |     8.967e-05 |   9.982e-04 |  0.000e+00 |
+| Hidden layers   | Iteration | Time                | Cost Function | Energy RMSE |
+|-----------------+-----------+---------------------+---------------+-------------|
+| {u'Pd': [2, 2]} |       134 | 2016-06-27T16:00:34 |     4.854e-05 |   9.953e-04 |
+| {u'Pd': [2, 3]} |       277 | 2016-06-27T16:00:47 |     4.821e-05 |   9.919e-04 |
 
 The single atom unit cell enforces perfect symmetry. This results in cancellation of forces on the atom in the unit cell. Hence, force RMSE = 0.0, which makes for fast training, but less information to train too.
 
 ** Validation of the network
 Now we need to validate our results to ensure that no over fitting has occurred. First, we will look at the residuals to the training and validation data. Then we will see if the neural networks perform well for their intended purpose. For ease of access, we will add the neural network energy predictions to the database for each structure.
 
-#+BEGIN_SRC python :result silent :exports none
+#+BEGIN_SRC python :results silent :exports none
 from ase.db import connect
 from amp import Amp
 
-db = connect('./networks/db0/data.db')
+db = connect('database/master.db')
 
 calc2 = Amp('./networks/db0/2-2/')
 calc3 = Amp('./networks/db0/3-3/')
@@ -589,12 +617,12 @@ calc3 = Amp('./networks/db0/3-3/')
 for d in db.select():
     atoms = db.get_atoms(d.id)
     atoms.set_calculator(calc2)
-    nrg2 = atoms.get_potential_energy()
+    e0 = atoms.get_potential_energy()
 
     atoms.set_calculator(calc3)
-    nrg3 = atoms.get_potential_energy()
+    e1 = atoms.get_potential_energy()
 
-    db.update(d.id, NN2=nrg2, NN3=nrg3)
+    db.update(d.id, nn0=e0, nn1=e1)
 #+END_SRC
 
 *** Analysis of residuals
@@ -613,22 +641,20 @@ from ase.db import connect
 from amp import Amp
 import os
 
-db = connect('./networks/db0/data.db')
+db = connect('database/master.db')
 
-f, ax = plt.subplots(1, 2, sharey=True, figsize=(8, 4))
+fig, ax = plt.subplots(1, 2, sharey=True, figsize=(8, 4))
 
 for i, n in enumerate([2, 3]):
 
-    Qe, Ne, var, ind = [], [], [], []
-    for d in db.select():
+    E, nnE, var, ind = [], [], [], []
+    for j, d in enumerate(db.select('dbkey=0')):
+	E += [d.energy / d.natoms]
+	nnE += [d['nn{}'.format(i)]/ d.natoms]
+	var += [j]
+	ind += [d.train_set]
 
-        Qe += [d.energy / d.natoms]
-        var += [d.id]
-
-        Ne += [d['NN{0}'.format(n)] / d.natoms]
-        ind += [d.train_set]
-
-    res = np.array(Ne) - np.array(Qe)
+    res = np.array(nnE) - np.array(E)
     mask = np.array(ind)
     valid = np.ma.masked_array(res, mask)
     train = np.ma.masked_array(res, ~mask)
@@ -636,22 +662,23 @@ for i, n in enumerate([2, 3]):
     tRMSE = np.sqrt(np.sum(train ** 2)/ len(train))
 
     ax[i].text(5, -0.0075,
-               'Trained RMSE: {0:1.2f} meV/atom'.format(tRMSE * 1000),
+               'Trained RMSE: {:.2f} meV/atom'.format(tRMSE * 1000),
                color='b', ha='left')
     ax[i].text(5, -0.009,
-               'Validation RMSE: {0:1.2f} meV/atom'.format(vRMSE * 1000),
+               'Validation RMSE: {:.2f} meV/atom'.format(vRMSE * 1000),
                color='r', ha='left')
 
     ax[i].scatter(var, train, color='b')
     ax[i].scatter(var, valid, color='r')
     ax[i].plot([min(var), max(var)], [0, 0], 'k--')
     ax[i].set_xlim(min(var), max(var))
-    ax[i].set_title('8-{0}-{0}-1 framework'.format(n))
+    
     ax[i].set_xlabel('Calculation ID')
+    ax[i].set_title('8-{0}-{0}-1 framework'.format(n))
 
 ax[0].set_ylim(-0.01, 0.01)
 ax[0].set_ylabel('Residual error (eV/atom)')
-plt.tight_layout(w_pad=-0.8)
+plt.tight_layout()
 plt.savefig('./images/residuals-1.png')
 #+END_SRC
 
@@ -678,13 +705,12 @@ import matplotlib.pyplot as plt
 from ase.utils.eos import EquationOfState
 from ase.db import connect
 from amp import Amp
-from ase.visualize import view
 import os
 import json
 import time
 from ase.units import kJ
 
-db = connect('./networks/db0/data.db')
+db = connect('database/master.db')
 
 for r, d, f in os.walk('./networks/db0/'):
     if 'trained-parameters.json' in f:
@@ -695,7 +721,7 @@ for r, d, f in os.walk('./networks/db0/'):
         n = p['hiddenlayers'].values()[0]
 
         nrg, vol, t = [], [], []
-        for d in db.select():
+        for d in db.select(['conv=None', 'factor<=1.2']):
             atoms = db.get_atoms(d.id)
             atoms.set_calculator(calc)
 
@@ -707,48 +733,45 @@ for r, d, f in os.walk('./networks/db0/'):
             vol += [d.volume]
             t += [(time2 - time1) * 1000]
 
-        min_nrg = vol[nrg.index(min(nrg))]
-        ind = (np.array(vol) > min_nrg - 15) & (np.array(vol) < min_nrg + 15)
-        vol = np.array(vol)[ind]
-        nrg = np.array(nrg)[ind]
-        t = np.array(t)[ind]
+        vol = np.array(vol)
+        nrg = np.array(nrg)
+        t = np.array(t)
 
         # Fit the data to SJEOS
         eos = EquationOfState(vol, nrg)
-        v0, e0, B, fit = eos.fit()
+        v0, e0, B = eos.fit()
 
         x = np.linspace(vol.min(), vol.max(), 250)
 
-        fig = plt.figure(figsize=(6, 4))
-        ax1 = fig.add_subplot(111)
-        ax1.scatter(vol, nrg, color='b')
-        ax1.plot(x, fit(x**-(1.0 / 3)), 'k-')
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.scatter(vol, nrg, color='b')
+        ax.plot(x, eos.fit0(x**-(1.0 / 3)), 'k-')
 
-        ax1.set_xlim(vol.min(), vol.max())
-        ax1.set_ylabel('Potential energy (eV)', color='b')
-        ax1.tick_params(axis='y', colors='b')
+        ax.set_xlim(vol.min(), vol.max())
+        ax.set_ylabel('Potential energy (eV)', color='b')
+        ax.tick_params(axis='y', colors='b')
 
-        ax1.text(vol.max() - 6, nrg.max(),
+        ax.text(vol.max() - 6, nrg.max(),
                  'V$_{0}$={1:1.1f}'.format('{min}', v0),
                  va='center', ha='left')
-        ax1.text(vol.max() - 6, nrg.max() - 0.3,
+        ax.text(vol.max() - 6, nrg.max() - 0.3,
                  'E$_{0}$={1:1.3f}'.format('{min}', e0),
                  va='center', ha='left')
-        ax1.text(vol.max() - 6, nrg.max() - 0.6,
+        ax.text(vol.max() - 6, nrg.max() - 0.6,
                  'B={0:1.0f}'.format(B  / kJ * 1.0e24),
                  va='center', ha='left')
 
-        ax2 = ax1.twinx()
+        ax1 = ax.twinx()
 
-        ax2.scatter(vol, t, color='r')
-        ax2.set_ylabel('Calculation time (milliseconds)', color='r')
-        ax2.set_xlim(vol.min(), vol.max())
-        ax2.tick_params(axis='y', colors='r')
-        ax2.set_ylim(0, 40)
+        ax1.scatter(vol, t, color='r')
+        ax1.set_ylabel('Calculation time (milliseconds)', color='r')
+        ax1.set_xlim(vol.min(), vol.max())
+        ax1.tick_params(axis='y', colors='r')
+        ax1.set_ylim(0, 120)
 
-        ax1.set_xlabel('Volume ($\AA^{3}$/atom)')
+        ax.set_xlabel('Volume ($\AA^{3}$/atom)')
         plt.tight_layout()
-        plt.savefig('./images/eos-NN{0}.png'.format(n[-1]))
+        plt.savefig('./images/eos-NN{}.png'.format(n[1]))
 #+END_SRC
 
 ** Applications
@@ -789,7 +812,7 @@ for calc in ['./networks/db0/2-2/',
                                   directions=[[0, 1, 1],
                                               [1, 0, 1],
                                               [1, 1, 0]],
-                                  latticeconstant=3.939)
+                                  latticeconstant=3.933)
 
         delta = np.array([[x, 0., 0.],
                           [0., x, 0.],
@@ -807,13 +830,13 @@ f, ax = plt.subplots(2, 1, sharex=True)
 ax[0].plot(D['2'].keys(), D['2'].values(), 'b', lw=2, label='2-2')
 ax[0].plot(D['3'].keys(), D['3'].values(), 'r', lw=2, label='3-3')
 ax[0].plot([0.85, 0.85], [2, -6], 'k--')
-ax[0].plot([2.07, 2.07], [2, -6], 'k--')
+ax[0].plot([2.1, 2.1], [2, -6], 'k--')
 ax[0].set_ylabel('Potential energy (eV)')
 ax[0].set_xlim(0.6, 2.5)
 ax[0].legend(loc='best')
 
 ax[1].plot([0.85, 0.85], [0, 1.8], 'k--')
-ax[1].plot([2.07, 2.07], [0, 1.8], 'k--')
+ax[1].plot([2.07, 2.1], [0, 1.8], 'k--')
 ax[1].plot(D['2'].keys(), res, 'k', lw=2)
 ax[1].set_ylabel('NN energy difference (eV)')
 ax[1].set_ylim(0, 1.8)
@@ -868,24 +891,29 @@ for calc in ['./networks/db0/2-2/',
     print 'Vacancy formation energy with {0} framework NN: {1:1.3f} eV'.format(fw, ve)
 #+END_SRC
 
-#+RESULTS:
-BFGS:   0  23:22:14     -131.319326       0.6402
-BFGS:   1  23:22:19     -131.359079       0.4868
-BFGS:   2  23:22:24     -131.407465       0.1290
-BFGS:   3  23:22:29     -131.408432       0.1178
-BFGS:   4  23:22:34     -131.409158       0.0511
-BFGS:   5  23:22:39     -131.406953       0.0411
-Vacancy formation energy with 2-2 framework NN: 4.170 eV
-BFGS:   0  23:22:44     -135.182786       0.0558
-BFGS:   1  23:22:49     -135.182910       0.0554
-BFGS:   2  23:22:54     -135.183387       0.0320
-Vacancy formation energy with 3-3 framework NN: 0.411 eV
+#+RESULTS: 
+: BFGS:   0  16:53:15     -135.283929       0.0990
+: BFGS:   1  16:53:44     -135.284153       0.0976
+: BFGS:   2  16:54:20     -135.279145       0.0443
+: Vacancy formation energy with 2-2 framework NN: 0.326 eV
+: BFGS:   0  16:54:49     -134.912593       1.0088
+: BFGS:   1  16:55:18     -134.894265       0.9076
+: BFGS:   2  16:55:49     -134.724829       0.5478
+: BFGS:   3  16:56:20     -134.359359       0.3337
+: BFGS:   4  16:56:51     -134.354847       0.3174
+: BFGS:   5  16:57:23     -134.376336       0.1087
+: BFGS:   6  16:57:57     -134.375750       0.1083
+: BFGS:   7  16:58:35     -134.373533       0.0955
+: BFGS:   8  16:59:12     -134.373914       0.1092
+: BFGS:   9  16:59:48     -134.372953       0.0918
+: BFGS:  10  17:00:23     -134.368951       0.0552
+: BFGS:  11  17:00:59     -134.363176       0.0431
+: Vacancy formation energy with 3-3 framework NN: 1.234 eV
 
 *** Molecular dynamics
 Finally, we try an MD simulation. In Figure ref:fig-MD1 we begin with a 3 \times 3 \times 3 primitive unit cell of Pd and add a random amount of kinetic energy to each of the 27 atoms in the system. We then use the forces on those atoms to determine where they will be after a small forward step in time (5 fs). Then, we use the BPNN to calculate the energy and forces on the perturbed system and repeat for 200 time steps.
 
 #+BEGIN_SRC python :results silent :exports none
-from __future__ import print_function
 from ase.lattice.cubic import FaceCenteredCubic
 from ase.md.langevin import Langevin
 from ase.io.trajectory import Trajectory
@@ -897,7 +925,7 @@ atoms = FaceCenteredCubic('Pd',
                           directions=[[0, 1, 1],
                                       [1, 0, 1],
                                       [1, 1, 0]],
-                          latticeconstant=3.939,
+                          latticeconstant=3.933,
                           size=(3, 3, 3))
 
 # Describe the interatomic interactions with the Effective Medium Theory
@@ -917,7 +945,7 @@ def printenergy(a=atoms):  # store a reference to atoms in the definition.
 dyn.attach(printenergy, interval=10)
 
 # We also want to save the positions of all atoms after every time step.
-traj = Trajectory('./networks/db1/MD.traj', 'w', atoms)
+traj = Trajectory('MD/db0/bulk.traj', 'w', atoms)
 dyn.attach(traj.write, interval=10)
 
 # Now run the dynamics
