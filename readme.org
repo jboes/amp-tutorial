@@ -457,7 +457,7 @@ for n in [2, 3]:
     calc.train(images=images,
                data_format='db',
                cores=1,
-               energy_goal=10,  # 
+               energy_goal=10,
                force_goal=None,  # There are no forces in the training data
                global_search=SimulatedAnnealing(temperature=70,
                                                 steps=50),
@@ -874,7 +874,7 @@ for calc in ['./networks/db0/2-2/',
                               directions=[[0, 1, 1],
                                           [1, 0, 1],
                                           [1, 1, 0]],
-                              latticeconstant=3.939)
+                              latticeconstant=3.933)
     atoms.set_calculator(Amp(calc))
     atoms *= (3, 3, 3)
 
@@ -936,15 +936,16 @@ atoms.set_calculator(Amp('./networks/db0/2-2/'))
 # coefficient to 0.02 atomic units.
 dyn = Langevin(atoms, 5 * units.fs, 900 * units.kB, 0.002)
 
-
-def printenergy(a=atoms):  # store a reference to atoms in the definition.
-    """Function to print the potential, kinetic and total energy."""
+# store a reference to atoms in the definition.
+def printenergy(a=atoms):  
     epot = a.get_potential_energy() / len(a)
     ekin = a.get_kinetic_energy() / len(a)
     
 dyn.attach(printenergy, interval=10)
 
 # We also want to save the positions of all atoms after every time step.
+if not os.path.exists('MD/db0/'):
+    os.makedirs('MD/db0/')
 traj = Trajectory('MD/db0/bulk.traj', 'w', atoms)
 dyn.attach(traj.write, interval=10)
 
@@ -963,63 +964,68 @@ In Figure ref:fig-MD1, the NN energy and corresponding DFT energy of every 4th s
 #+BEGIN_SRC python :results silent :exports none
 from ase.io.trajectory import Trajectory
 import numpy as np
-from jasp import *
+from vasp import Vasp
+from vasp.vasprc import VASPRC
+VASPRC['queue.walltime'] = '24:00:00'
+
+images = Trajectory('MD/db0/bulk.traj', 'r')
+
+calcs = [Vasp('DFT/bulk=fcc/conv=None/factor=None/MD={}'.format(i),
+              xc='pbe',
+              kpts=[6]*3,
+              encut=350,
+              nsw=0,
+              atoms=images[i])
+         for i in np.arange(0, len(images), 4)]
+
+nrg = [calc.potential_energy for calc in calcs]
+Vasp.stop_if(None in nrg)
+
+# Write all entries to database
+[calc.write2db('database/master.db', parser='=', keys={'dbkey': 1})
+ for calc in calcs]
+#+END_SRC
+
+#+BEGIN_SRC python :results silent :exports none
+from ase.io.trajectory import Trajectory
+from ase.db import connect
 import matplotlib.pyplot as plt
-import jbtools.gilgamesh as jb
-JASPRC['queue.walltime'] = '24:00:00'
+from ase.utils.eos import EquationOfState
+from ase.units import kJ
+import numpy as np
 
-ready = True
-Ne, nrg, res, s = [], [], [], []
-for i, atoms in enumerate(Trajectory('./networks/db0/MD.traj', 'r')):
+images = Trajectory('MD/db0/bulk.traj', 'r')
+nnE = [images[i].get_potential_energy() for i
+       in np.arange(0, 200)]
 
-    Ne += [atoms.get_potential_energy()]
+E, s = [], []
+with connect('database/master.db') as db:
+    for d in db.select('MD'):
+        E += [d.energy]
+        s += [d.MD]
 
-    if (i + 1) % 4 == 0:
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.plot(range(len(nnE)), nnE, 'b-', label='NN prediction')
+ax.scatter(s, E, facecolor='none',
+	   edgecolor='b', label='DFT prediction')
 
-        s += [i]
+ax.set_xlim(min(s), max(s))
+ax.set_ylabel('Potential energy (eV)', color='b')
+ax.tick_params(axis='y', colors='b')
+ax.set_ylim(-141, -136)
+ax.set_xlabel('Time step')
+ax.legend(loc=2)
 
-        with jasp('DFT/structure=fcc/convergence=None/factor=None/MD={0}'.format(int(i)),
-                  xc='PBE',
-                  kpts=(5, 5, 5),
-                  encut=400,
-                  ibrion=-1,
-                  atoms=atoms) as calc:
-            try:
-                atoms = calc.get_atoms()
-                nrg += [atoms.get_potential_energy()]
-                res += [abs(Ne[-1] - nrg[-1])]
-            except(VaspQueued, VaspSubmitted):
-                ready = False
+ax1 = ax.twinx()
 
-if ready:
-    # Here we collect the data to an ASE database
-    # for easy future manipulation
-    jb.write_database('./DFT/structure=fcc/convergence=None/',
-                      db='./networks/db1/data.db')
+ax1.scatter(s, res, color='r')
+ax1.set_ylabel('Absolute residual error (eV)', color='r')
+ax1.set_xlim(min(s), max(s))
+ax1.tick_params(axis='y', colors='r')
+ax1.set_ylim(0, 5.0)
 
-    fig = plt.figure(figsize=(6, 4))
-    ax1 = fig.add_subplot(111)
-    ax1.plot(range(len(Ne)), Ne, 'b-', label='NN prediction')
-    ax1.scatter(s, nrg, facecolor='none',
-                edgecolor='b', label='DFT prediction')
-
-    ax1.set_xlim(min(s), max(s))
-    ax1.set_ylabel('Potential energy (eV)', color='b')
-    ax1.tick_params(axis='y', colors='b')
-    ax1.set_ylim(-141, -136)
-    ax1.set_xlabel('Time step')
-    ax1.legend(loc=2)
-
-    ax2 = ax1.twinx()
-
-    ax2.scatter(s, res, color='r')
-    ax2.set_ylabel('Absolute residual error (eV)', color='r')
-    ax2.set_xlim(min(s), max(s))
-    ax2.tick_params(axis='y', colors='r')
-    ax2.set_ylim(0, 5.0)
-
-    plt.tight_layout()
-    plt.savefig('./images/MD.png')
+plt.tight_layout()
+plt.savefig('./images/MD.png')
 #+END_SRC
 
 * Teaching the neural network
