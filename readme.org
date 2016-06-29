@@ -967,17 +967,18 @@ import numpy as np
 from vasp import Vasp
 from vasp.vasprc import VASPRC
 VASPRC['queue.walltime'] = '24:00:00'
+VASPRC['queue.ppn'] = 4
 
 images = Trajectory('MD/db0/bulk.traj', 'r')
 
 calcs = [Vasp('DFT/bulk=fcc/conv=None/factor=None/MD={}'.format(i),
               xc='pbe',
-              kpts=[6]*3,
+              kpts=[5]*3,
               encut=350,
               nsw=0,
               atoms=images[i])
          for i in np.arange(0, len(images), 4)]
-
+[calc.set_memory() for calc in calcs]
 nrg = [calc.potential_energy for calc in calcs]
 Vasp.stop_if(None in nrg)
 
@@ -1034,18 +1035,19 @@ Here we perform a second iteration of the neural network. Now we will include th
 
 #+BEGIN_SRC python :results silent :exports none
 from ase.db import connect
-import os
 import random
 import numpy as np
 
-db = connect('./networks/db1/data.db')
+db = connect('database/master.db')
 
-n = db.count()
+n_ids = []
+for d in db.select('dbkey=1'):
+    n_ids += [d.id]
+
+n = len(n_ids)
 n_train = int(round(n * 0.9))
 
-n_ids =  np.array(range(n)) + 1
-
-# This will sudo-randomly select 10% of the calculations
+# This will pseudo-randomly select 10% of the calculations
 # Which is useful for reproducing our results.
 random.seed(256)
 train_samples = random.sample(n_ids, n_train)
@@ -1053,10 +1055,6 @@ valid_samples = set(n_ids) - set(train_samples)
 
 db.update(list(train_samples), train_set=True)
 db.update(list(valid_samples), train_set=False)
-
-with connect('./networks/db1/train.db') as db0:
-    for d in db.select(['train_set=True']):
-        db0.write(d, key_value_pairs=d.key_value_pairs)
 #+END_SRC
 
 ** Training new network
