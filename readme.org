@@ -498,81 +498,6 @@ for n in [2, 3]:
                extend_variables=False) # Do not use this feature
 #+END_SRC
 
-We can also submit them to the queue on Gilgamesh:
-
-#+BEGIN_SRC python :results silent :exports none
-import os
-import subprocess
-import time
-
-home = os.getcwd()
-
-# We will try an iteration for 2 and 3 nodes with 2 hidden layers.
-for n in [2, 3]:
-
-    label = '{0}-{0}'.format(n)
-    wd = os.path.join(home, 'networks/db0/' + label)
-
-    if not os.path.exists(wd):
-        os.makedirs(wd)
-    os.chdir(wd)
-
-    run_amp = """#!/usr/bin/env python
-from amp import Amp
-from amp.descriptor import Gaussian
-from amp.regression import NeuralNetwork
-from ase.db import connect
-from amp import SimulatedAnnealing
-import os
-
-db = connect('../../../database/master.db')
-
-images = []
-for d in db.select('train_set=True'):
-    atoms = db.get_atoms(d.id)
-    del atoms.constraints
-    images += [atoms]
-
-for n in [2, 3]:
-
-    calc = Amp(label='./',
-               dblabel='../../',
-               descriptor=Gaussian(cutoff=6.5),
-               regression=NeuralNetwork(hiddenlayers=(2, n)))
-
-    calc.train(images=images,
-               data_format='db',
-               cores=1,
-               energy_goal=1e-3,
-               force_goal=None,
-               global_search=SimulatedAnnealing(temperature=70,
-                                                steps=50),
-               extend_variables=False)
-""".format(n)
-
-    cmd = '''#!/bin/bash
-#PBS -N {0}
-#PBS -l nodes=1:ppn=1
-#PBS -l walltime=24:00:00
-#PBS -l mem=2GB
-#PBS -joe
-cd $PBS_O_WORKDIR
-./submit.py
-#end'''.format(wd)
-
-    with open('submit.py', 'w') as f:
-        f.write(run_amp)
-    os.chmod('submit.py', 0777)
-
-    with open('submit.sh', 'w') as f:
-        f.write(cmd)
-
-    subprocess.call(['qsub', 'submit.sh'])
-    time.sleep(5)
-    os.unlink('submit.sh')
-    os.chdir(wd)
-#+END_SRC
-
 Once the calculations finish we can check their convergence using the code below. These are trivial networks to train, so convergence should not be an issue.  This can be a difficult and time consuming part of the process for more complex system. 
 
 #+BEGIN_SRC python :results raw :exports none
@@ -672,7 +597,7 @@ for i, n in enumerate([2, 3]):
     ax[i].scatter(var, valid, color='r')
     ax[i].plot([min(var), max(var)], [0, 0], 'k--')
     ax[i].set_xlim(min(var), max(var))
-    
+
     ax[i].set_xlabel('Calculation ID')
     ax[i].set_title('8-{0}-{0}-1 framework'.format(n))
 
@@ -788,7 +713,7 @@ First, we expand the region of equation of state to see how well it extrapolates
 #+attr_org: :width 600
 [[./images/app-eos.png]]
 
-At extreme stretch (factor > 2.07%) both neural networks agree because we have trained it nearly to the cutoff radius of 6.0 $\AA$.
+At extreme stretch (factor > 2.1%) both neural networks agree because we have trained it nearly to the cutoff radius of 6.0 $\AA$.
 
 As soon as we strain the lattice below the trained region, the network predictions quickly diverge. This indicates that the training set is not useful for predictions in this region.
 
@@ -835,11 +760,11 @@ ax[0].set_ylabel('Potential energy (eV)')
 ax[0].set_xlim(0.6, 2.5)
 ax[0].legend(loc='best')
 
-ax[1].plot([0.85, 0.85], [0, 1.8], 'k--')
-ax[1].plot([2.07, 2.1], [0, 1.8], 'k--')
+ax[1].plot([0.85, 0.85], [0, 0.5], 'k--')
+ax[1].plot([2.07, 2.1], [0, 0.5], 'k--')
 ax[1].plot(D['2'].keys(), res, 'k', lw=2)
 ax[1].set_ylabel('NN energy difference (eV)')
-ax[1].set_ylim(0, 1.8)
+ax[1].set_ylim(0, 0.5)
 ax[1].set_xlabel('Strain/stretch factor (%)')
 plt.tight_layout(w_pad=0.0)
 plt.savefig('./images/app-eos.png')
@@ -991,8 +916,6 @@ Vasp.stop_if(None in nrg)
 from ase.io.trajectory import Trajectory
 from ase.db import connect
 import matplotlib.pyplot as plt
-from ase.utils.eos import EquationOfState
-from ase.units import kJ
 import numpy as np
 
 images = Trajectory('MD/db0/bulk.traj', 'r')
@@ -1005,6 +928,10 @@ with connect('database/master.db') as db:
         E += [d.energy]
         s += [d.MD]
 
+res = [r for i, r in enumerate(nnE) if i in
+       np.arange(0, len(images), 4)]
+res = abs(np.array(res) - np.array(E))
+
 fig, ax = plt.subplots(figsize=(6, 4))
 ax.plot(range(len(nnE)), nnE, 'b-', label='NN prediction')
 ax.scatter(s, E, facecolor='none',
@@ -1013,7 +940,7 @@ ax.scatter(s, E, facecolor='none',
 ax.set_xlim(min(s), max(s))
 ax.set_ylabel('Potential energy (eV)', color='b')
 ax.tick_params(axis='y', colors='b')
-ax.set_ylim(-141, -136)
+ax.set_ylim(-141, -130)
 ax.set_xlabel('Time step')
 ax.legend(loc=2)
 
@@ -1023,7 +950,7 @@ ax1.scatter(s, res, color='r')
 ax1.set_ylabel('Absolute residual error (eV)', color='r')
 ax1.set_xlim(min(s), max(s))
 ax1.tick_params(axis='y', colors='r')
-ax1.set_ylim(0, 5.0)
+ax1.set_ylim(0.0, 7.0)
 
 plt.tight_layout()
 plt.savefig('./images/MD.png')
@@ -1060,6 +987,8 @@ db.update(list(valid_samples), train_set=False)
 ** Training new network
 Training the second networks took significantly longer since we are no longer training such simple structures. There is now a need for more than one descriptor to define the system. However, 8 descriptors is the default for a single element.
 
+We submit these to the queue on Gilgamesh, since they are much longer to run:
+
 #+BEGIN_SRC python :results silent :exports none
 import os
 import subprocess
@@ -1067,34 +996,47 @@ import time
 
 home = os.getcwd()
 
-# We will try an iteration for 2 and 3 nodes with 2 hidden layers.
-for n in [2, 3]:
+for n in [3]:
 
-    label = '{0}-{0}'.format(n)
-    wd = os.path.join(home, 'networks/db1/' + label)
+    wd = 'networks/db1/{0}-{0}/'.format(n)
 
     if not os.path.exists(wd):
         os.makedirs(wd)
     os.chdir(wd)
 
-    run_amp = '''#!/usr/bin/env python
+    run_amp = """#!/usr/bin/env python
 from amp import Amp
-from amp.descriptor import *
-from amp.regression import *
+from amp.descriptor import Gaussian
+from amp.regression import NeuralNetwork
+from ase.db import connect
+from amp import SimulatedAnnealing
 
-calc = Amp(label="./",
-           descriptor=Behler(cutoff=6.0),
-           regression=NeuralNetwork(hiddenlayers=(2, {0})))
+db = connect('../../../database/master.db')
 
-calc.train("../train.db", # The training data
-           cores=1,
-           global_search=None, # not found the simulated annealing feature useful
-           extend_variables=False) # feature does not work properly and will crash
-'''.format(n)
+images = []
+for d in db.select('train_set=True'):
+    atoms = db.get_atoms(d.id)
+    del atoms.constraints
+    images += [atoms]
+
+calc = Amp(label='./',
+	   dblabel='../../',
+	   descriptor=Gaussian(cutoff=6.5),
+	   regression=NeuralNetwork(hiddenlayers=(2, {})))
+
+calc.train(images=images,
+	   data_format='db',
+	   cores=4,
+	   energy_goal=1e-2,
+	   force_goal=1e-1,
+	   global_search=SimulatedAnnealing(temperature=70,
+					    steps=50),
+	   extend_variables=False)
+""".format(n)
 
     cmd = '''#!/bin/bash
-#PBS -N {0}
-#PBS -l nodes=1:ppn=1
+#PBS -N {}
+#PBS -l nodes=1:ppn=4
 #PBS -l walltime=24:00:00
 #PBS -l mem=2GB
 #PBS -joe
@@ -1110,10 +1052,13 @@ cd $PBS_O_WORKDIR
         f.write(cmd)
 
     subprocess.call(['qsub', 'submit.sh'])
-    time.sleep(5)
+    time.sleep(2)
     os.unlink('submit.sh')
-    os.chdir(wd)
+    os.chdir(home)
 #+END_SRC
+
+#+RESULTS: 
+: 1416721.gilgamesh.cheme.cmu.edu
 
 #+BEGIN_SRC python :results raw :exports none
 import os
@@ -1123,12 +1068,12 @@ print('|Hidden layers|Iteration|Time|Cost Function|Energy RMSE|Force RMSE|')
 print('|-')
 
 for r, d, f in os.walk('networks/db1/'):
-    if 'train-log.txt' in f:
-        with open(os.path.join(r, 'train-log.txt'), 'r') as fi:
+    if 'log.txt' in f:
+        with open(os.path.join(r, 'log.txt'), 'r') as fi:
             v = fi.readlines()[-5].split()
 
-    if 'trained-parameters.json' in f:
-        with open(os.path.join(r, 'trained-parameters.json'), 'r') as fi:
+    if 'checkpoint-parameters.json' in f:
+        with open(os.path.join(r, 'checkpoint-parameters.json'), 'r') as fi:
             p = json.load(fi)
         n = p['hiddenlayers']
         print('|{0}|{1}|{2}|{3}|{4}|{5}|'.format(n, v[0], v[1], v[2], v[3], v[4]))
@@ -1137,8 +1082,8 @@ for r, d, f in os.walk('networks/db1/'):
 #+RESULTS:
 | Hidden layers   | Iteration | Time                | Cost Function | Energy RMSE | Force RMSE |
 |-----------------+-----------+---------------------+---------------+-------------+------------|
-| {u'Pd': [2, 2]} |      6544 | 2015-12-05T21:56:51 |     4.936e-02 |   3.080e-03 |  9.436e-02 |
-| {u'Pd': [2, 3]} |      3494 | 2015-12-02T13:06:09 |     4.905e-02 |   3.131e-03 |  9.401e-02 |
+| {u'Pd': [2, 2]} |      5716 | 2016-06-30T17:48:06 |     3.866e-02 |   4.999e-03 |  1.965e-01 |
+| {u'Pd': [2, 3]} |      4539 | 2016-07-01T12:33:17 |     3.661e-02 |   4.715e-03 |  1.916e-01 |
 
 *** Network validation
 Since volume is no longer a good description of all structures in our data set, we will simply perform validation of residuals errors based on calculation IDs.
@@ -1147,20 +1092,20 @@ Since volume is no longer a good description of all structures in our data set, 
 from ase.db import connect
 from amp import Amp
 
-db = connect('./networks/db1/data.db')
+db = connect('database/master.db')
 
 calc2 = Amp('./networks/db1/2-2/')
 calc3 = Amp('./networks/db1/3-3/')
 
-for d in db.select():
+for d in db.select('dbkey'):
     atoms = db.get_atoms(d.id)
     atoms.set_calculator(calc2)
-    nrg2 = atoms.get_potential_energy()
+    e0 = atoms.get_potential_energy()
 
     atoms.set_calculator(calc3)
-    nrg3 = atoms.get_potential_energy()
+    e1 = atoms.get_potential_energy()
 
-    db.update(d.id, NN2=nrg2, NN3=nrg3)
+    db.update(d.id, nn2=e0, nn3=e1)
 #+END_SRC
 
 Figure ref:fig-residuals-2 shows that the second iteration of the fit is not as accurate as the first. This is because we have expanded the scope of the potential energy surface we are trying to fit to. Additional accuracy can be obtained by further sampling of similar structures, in this region of the potential energy surface. For most current applications with NN, an RMSE of $\approx$ 3 meV/atom is considered to be more than sufficient.
