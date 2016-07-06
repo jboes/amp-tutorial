@@ -1094,8 +1094,8 @@ from amp import Amp
 
 db = connect('database/master.db')
 
-calc2 = Amp('./networks/db1/2-2/')
-calc3 = Amp('./networks/db1/3-3/')
+calc2 = Amp('./networks/db1/2-2/checkpoint-parameters.json')
+calc3 = Amp('./networks/db1/3-3/checkpoint-parameters.json')
 
 for d in db.select('dbkey'):
     atoms = db.get_atoms(d.id)
@@ -1107,6 +1107,8 @@ for d in db.select('dbkey'):
 
     db.update(d.id, nn2=e0, nn3=e1)
 #+END_SRC
+
+#+RESULTS:
 
 Figure ref:fig-residuals-2 shows that the second iteration of the fit is not as accurate as the first. This is because we have expanded the scope of the potential energy surface we are trying to fit to. Additional accuracy can be obtained by further sampling of similar structures, in this region of the potential energy surface. For most current applications with NN, an RMSE of $\approx$ 3 meV/atom is considered to be more than sufficient.
 
@@ -1123,22 +1125,20 @@ from ase.db import connect
 from amp import Amp
 import os
 
-db = connect('./networks/db1/data.db')
+db = connect('database/master.db')
 
-f, ax = plt.subplots(1, 2, sharey=True, figsize=(8, 4))
+fig, ax = plt.subplots(1, 2, sharey=True, figsize=(8, 4))
 
 for i, n in enumerate([2, 3]):
 
-    Qe, Ne, var, ind = [], [], [], []
-    for d in db.select():
+    E, nnE, var, ind = [], [], [], []
+    for j, d in enumerate(db.select('dbkey')):
+	E += [d.energy / d.natoms]
+	nnE += [d['nn{}'.format(n)]/ d.natoms]
+	var += [j]
+	ind += [d.train_set]
 
-        Qe += [d.energy / d.natoms]
-        var += [d.id]
-
-        Ne += [d['NN{0}'.format(n)] / d.natoms]
-        ind += [d.train_set]
-
-    res = np.array(Ne) - np.array(Qe)
+    res = np.array(nnE) - np.array(E)
     mask = np.array(ind)
     valid = np.ma.masked_array(res, mask)
     train = np.ma.masked_array(res, ~mask)
@@ -1146,22 +1146,23 @@ for i, n in enumerate([2, 3]):
     tRMSE = np.sqrt(np.sum(train ** 2)/ len(train))
 
     ax[i].text(5, -0.015,
-               'Trained RMSE: {0:1.2f} meV/atom'.format(tRMSE * 1000),
+               'Trained RMSE: {:.2f} meV/atom'.format(tRMSE * 1000),
                color='b', ha='left')
     ax[i].text(5, -0.018,
-               'Validation RMSE: {0:1.2f} meV/atom'.format(vRMSE * 1000),
+               'Validation RMSE: {:.2f} meV/atom'.format(vRMSE * 1000),
                color='r', ha='left')
 
     ax[i].scatter(var, train, color='b')
     ax[i].scatter(var, valid, color='r')
     ax[i].plot([min(var), max(var)], [0, 0], 'k--')
     ax[i].set_xlim(min(var), max(var))
-    ax[i].set_title('8-{0}-{0}-1 framework'.format(n))
+
     ax[i].set_xlabel('Calculation ID')
+    ax[i].set_title('8-{0}-{0}-1 framework'.format(n))
 
 ax[0].set_ylim(-0.02, 0.02)
 ax[0].set_ylabel('Residual error (eV/atom)')
-plt.tight_layout(w_pad=0)
+plt.tight_layout()
 plt.savefig('./images/residuals-2.png')
 #+END_SRC
 
@@ -1183,46 +1184,48 @@ import numpy as np
 from ase.db import connect
 import matplotlib.pyplot as plt
 
-db = connect('./networks/db1/data.db')
+db = connect('database/master.db')
 
-Ne = []
-for i, atoms in enumerate(Trajectory('./networks/db0/MD.traj', 'r')):
+onnE, nnE = [], []
+for i, atoms in enumerate(Trajectory('MD/db0/bulk.traj', 'r')):
+    onnE += [atoms.get_potential_energy()]
+    atoms.set_calculator(Amp('networks/db1/3-3/checkpoint-parameters.json'))
+    nnE += [atoms.get_potential_energy()]
 
-    atoms.set_calculator(Amp('./networks/db1/2-2/'))
-    Ne += [atoms.get_potential_energy()]
-
-Qe = []
+E = []
 for d in db.select('MD'):
+    res = abs(nnE[d.MD] - d.energy)
+    E += [[d.MD, d.energy, res]]
 
-    res = abs(Ne[d.MD] - d.energy)
-    Qe += [[d.MD, d.energy, res]]
+E.sort(key=lambda x:x[0])
+E = np.array(E).T
 
-Qe.sort(key=lambda x:x[0])
-Qe = np.array(Qe).T
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.plot(range(len(onnE)), onnE, 'b--', label='db0 NN prediction')
+ax.plot(range(len(nnE)), nnE, 'b-', label='db1 NN prediction')
+ax.scatter(E[0], E[1], facecolor='none', edgecolor='b', label='DFT prediction')
 
-fig = plt.figure(figsize=(6, 4))
-ax1 = fig.add_subplot(111)
-ax1.plot(range(len(Ne)), Ne, 'b-', label='NN prediction')
-ax1.scatter(Qe[0], Qe[1], facecolor='none', edgecolor='b', label='DFT prediction')
+ax.set_xlim(min(E[0]), max(E[0]))
+ax.set_ylabel('Potential energy (eV)', color='b')
+ax.tick_params(axis='y', colors='b')
+ax.set_ylim(-141, -130)
+ax.set_xlabel('Time step')
+ax.legend(loc=2)
 
-ax1.set_xlim(min(Qe[0]), max(Qe[0]))
-ax1.set_ylabel('Potential energy (eV)', color='b')
-ax1.tick_params(axis='y', colors='b')
-ax1.set_ylim(-141, -136)
-ax1.set_xlabel('Time step')
-ax1.legend(loc=2)
+ax1 = ax.twinx()
 
-ax2 = ax1.twinx()
-
-ax2.scatter(Qe[0], Qe[2], color='r')
-ax2.set_ylabel('Absolute residual error (eV)', color='r')
-ax2.set_xlim(min(Qe[0]), max(Qe[0]))
-ax2.tick_params(axis='y', colors='r')
-ax2.set_ylim(0, 0.5)
+ax1.scatter(E[0], E[2], color='r')
+ax1.set_ylabel('Absolute residual error (eV)', color='r')
+ax1.set_xlim(min(E[0]), max(E[0]))
+ax1.tick_params(axis='y', colors='r')
+ax1.set_ylim(0, 7)
 
 plt.tight_layout()
 plt.savefig('./images/MD2.png')
 #+END_SRC
+
+#+RESULTS: 
+
 
 bibliographystyle:unsrt
 bibliography:./bibliography.bib
