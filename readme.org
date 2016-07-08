@@ -139,7 +139,9 @@ Vasp.stop_if(None in nrg)
 # Write all entries to database
 if not os.path.exists('database/'):
     os.makedirs('database/')
-[calc.write2db('database/master.db', parser='=') for calc in calcs]
+[calc.write_db('database/master.db',
+               parser='=', overwrite=False)
+ for calc in calcs]
 #+END_SRC
 
 #+BEGIN_SRC python :results silent :exports none
@@ -217,7 +219,8 @@ nrg = [calc.potential_energy for calc in calcs]
 Vasp.stop_if(None in nrg)
 
 # Write all entries to database
-[calc.write2db('database/master.db', parser='=')
+[calc.write_db('database/master.db', 
+               parser='=', overwrite=False)
  for calc in calcs]
 #+END_SRC
 
@@ -292,7 +295,8 @@ calc = Vasp('DFT/bulk=fcc/conv=None/factor=1.00',
             atoms=atoms)
 nrg = calc.potential_energy
 Vasp.stop_if(nrg is None)
-calc.write2db('database/master.db', parser='=', keys={'dbkey': 0})
+calc.write_db('database/master.db', parser='=',
+              overwrite=False, keys={'dbkey': 0})
 #+END_SRC
 
 #+BEGIN_SRC python :results silent :exports none
@@ -329,7 +333,8 @@ for f in factor:
 Vasp.stop_if(None in nrg)
 
 # Write all entries to database
-[calc.write2db('database/master.db', parser='=', keys={'dbkey': 0})
+[calc.write_db('database/master.db', parser='=',
+               overwrite=False, keys={'dbkey': 0})
  for calc in calcs]
 #+END_SRC
 
@@ -908,7 +913,8 @@ nrg = [calc.potential_energy for calc in calcs]
 Vasp.stop_if(None in nrg)
 
 # Write all entries to database
-[calc.write2db('database/master.db', parser='=', keys={'dbkey': 1})
+[calc.write_db('database/master.db', parser='=',
+               overwrite=False, keys={'dbkey': 1})
  for calc in calcs]
 #+END_SRC
 
@@ -1223,9 +1229,6 @@ ax1.set_ylim(0, 7)
 plt.tight_layout()
 plt.savefig('./images/MD2.png')
 #+END_SRC
-
-#+RESULTS: 
-
 
 bibliographystyle:unsrt
 bibliography:./bibliography.bib
