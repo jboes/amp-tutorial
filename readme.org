@@ -95,7 +95,7 @@ Finally, for each atom in a system, we calculate the ``symmetry function'' and p
 
 - Then we sum the energy contributions from each atom to get the total energy.
 
-- More information can be found in Reference citenum:behler-2007-nonad.
+- More information can be found in Reference cite:Behler_2007.
 
 * Convergence calculations
 First, we need to determine an appropriate level of convergence for our calculations. I usually use the natural bulk configuration of a metal for these studies. For Pd, this is face centered cubic (fcc).
